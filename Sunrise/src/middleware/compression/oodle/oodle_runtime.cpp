@@ -86,11 +86,12 @@ bool required_capacity(HMODULE module, std::size_t inputSize, std::size_t& capac
     return true;
 }
 
-/** Compresses one fixed-buffer payload. It does not load or keep a module. */
-bool compress(HMODULE module,
-              std::span<const std::byte> input,
-              std::span<std::byte> output,
-              std::size_t& written) noexcept {
+/** Compresses one fixed-buffer payload with an explicit source-compatible codec. */
+bool compress_with_codec(HMODULE module,
+                         int compressor,
+                         std::span<const std::byte> input,
+                         std::span<std::byte> output,
+                         std::size_t& written) noexcept {
     written = 0;
     std::size_t required = 0;
     const CompressFunction function = resolve<CompressFunction>(module, kCompressExport);
@@ -98,7 +99,7 @@ bool compress(HMODULE module,
         || output.size() < required) {
         return false;
     }
-    const std::int64_t result = function(kKrakenCompressor,
+    const std::int64_t result = function(compressor,
                                          input.data(),
                                          static_cast<std::int64_t>(input.size()),
                                          output.data(),
@@ -113,6 +114,14 @@ bool compress(HMODULE module,
     }
     written = static_cast<std::size_t>(result);
     return true;
+}
+
+/** Compresses one fixed-buffer payload with the queuez default codec. */
+bool compress(HMODULE module,
+              std::span<const std::byte> input,
+              std::span<std::byte> output,
+              std::size_t& written) noexcept {
+    return compress_with_codec(module, kKrakenCompressor, input, output, written);
 }
 
 /** Decompresses one fixed-buffer payload and rejects partial output. */

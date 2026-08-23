@@ -322,8 +322,11 @@ void present(IDXGISwapChain* swapChain) noexcept {
     ReleaseSRWLockExclusive(&g_rendererLock);
 
     // The cursor policy calls Win32, so it runs only after the renderer lock is gone.
-    const bool visible = core::ui::runtime::snapshot().visible
-                         || ::sunrise::izanami::editor::ui::standalone_visible();
+    const bool coreVisible = core::ui::runtime::snapshot().visible;
+    const bool forgeVisible = ::sunrise::izanami::editor::ui::standalone_visible();
+    const bool forgeNavigation =
+        forgeVisible && ::sunrise::izanami::editor::ui::standalone_camera_control_active();
+    const bool visible = coreVisible || (forgeVisible && !forgeNavigation);
     cursor::apply_visibility(visible);
     polled_input::apply_visibility(visible);
     // The game makes its raw-mouse window during startup, so the first tries find nothing.

@@ -25,11 +25,25 @@ void clear() noexcept;
 [[nodiscard]] bool override_active() noexcept;
 
 /**
- * Overwrites one committed destination with the forced one. The descriptor bits are dropped:
- * they carry the client's chosen name, and one outbound message replays them as-is. The
- * activity index goes too, because many package names map to several definitions.
- * @param selection Destination built from the client's request, replaced in place.
- * @return True when a complete forced destination was applied.
+ * Rewrites the destination activity in both the decoded selection and its captured descriptor.
+
+ * * @param selection Selection whose carrier identity is being promoted.
+ * @param activityIndex
+ * Bias-free activity index to encode.
+ * @return True when the index was valid and every captured
+ * descriptor bit was rewritten.
+ */
+[[nodiscard]] bool rewrite_carrier_activity(destination::DestinationSelection& selection,
+                                            std::int16_t activityIndex) noexcept;
+
+/**
+ * Overwrites one committed destination with the forced one. A captured descriptor is renamed
+ * in
+ * place so its opaque fields and carrier identity survive the redirect.
+ * @param selection
+ * Destination built from the client's request, replaced in place.
+ * @return True when a complete
+ * forced destination was applied.
  */
 [[nodiscard]] bool apply(destination::DestinationSelection& selection) noexcept;
 

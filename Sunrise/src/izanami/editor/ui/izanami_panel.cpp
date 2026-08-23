@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -13,8 +14,11 @@
 #include <string_view>
 #include <vector>
 
+#include "../../../client/content/items/packages/internal.h"
+#include "../../../client/hooks/spawn/spawn_runtime.h"
 #include "../../../core/logging/log.h"
 #include "../../../core/ui/runtime/ui_visibility_runtime.h"
+#include "../../../middleware/content/packages/reader/reader.h"
 #include "../../catalog/catalog_record.h"
 #include "../../editor/workspace/editor_workspace.h"
 #include "../../fate/lexer/lexer.h"
@@ -22,29 +26,45 @@
 #include "../../kernel/kernel.h"
 #include "../../project/serialization/schema.h"
 #include "../../research/experiments.h"
+#include "../../research/native_object_types.h"
 #include "../../research/native_targets.h"
+#include "../../runtime/gameplay_editor_mode.h"
 #include "../../runtime/runtime_adapter.h"
+#include "forge_shell.h"
 
 namespace sunrise::izanami::editor::ui {
 namespace {
 
 namespace catalog = sunrise::izanami::catalog;
+namespace item_packages = sunrise::client::content::items::packages;
+namespace native_spawn = sunrise::client::hooks::spawn;
 namespace lexer = sunrise::izanami::fate::lexer;
 namespace parser = sunrise::izanami::fate::parser;
 namespace kernel = sunrise::izanami::kernel;
 namespace serialization = sunrise::izanami::project::serialization;
 namespace research = sunrise::izanami::research;
+namespace package_reader = sunrise::middleware::content::packages::reader;
 namespace runtime = sunrise::izanami::runtime;
 namespace workspace = sunrise::izanami::editor::workspace;
 
 constexpr std::string_view kSampleFate = "entity DoorController { on start { } }";
 constexpr char kObjectDragPayload[] = "IZANAMI_OBJECT";
+constexpr std::uint32_t kEntityDefinitionClass = 0x80809C0FU;
+constexpr std::uint32_t kFieldProvenChandelierTag = 0x80B6C246U;
 constexpr UINT kStandaloneToggleKey = VK_F8;
-constexpr float kStandaloneViewportScale = 0.86F;
 constexpr ImGuiWindowFlags kStandaloneWindowFlags =
-    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove
+    | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBringToFrontOnFocus
+    | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoScrollbar
+    | ImGuiWindowFlags_NoScrollWithMouse;
 
-std::atomic_bool g_standaloneVisible{};
+std::atomic_bool g_standaloneTargetVisible{};
+std::atomic_bool g_standaloneAnimating{};
+float g_standaloneAnimation{};
+
+void ensure_overlay_navigation() noexcept {
+    (void)runtime::gameplay_editor_mode::enter_overlay_navigation();
+}
 
 struct CapabilityRow {
     runtime::Capability capability;
@@ -95,6 +115,33 @@ struct EditorUiState {
     ImVec2 dragStartWorld{};
 };
 
+struct ResidentEntityCandidate {
+    std::uint32_t tag{};
+    std::uint8_t objectType{};
+    std::array<char, 96> packageFamily{};
+    std::array<char, 192> label{};
+};
+
+struct FunctionalLabState {
+    std::vector<ResidentEntityCandidate> residentEntities{};
+    std::array<std::size_t, 256> residentTypeCounts{};
+    package_reader::ScanResult entityScan{};
+    std::uint32_t selectedEntityTag{};
+    std::uint32_t rawEntityTag{};
+    int objectTypeFilter{-1};
+    int spawnOrigin{2};
+    int spawnAmount{1};
+    native_spawn::Settings spawnSettings{
+        1.0F, 10.0F, 1.0F, {}, {0.0F, 0.0F, 0.0F, 1.0F}, false, false};
+    float collisionProbeDistance{25.0F};
+    native_spawn::RaycastProbe collisionProbe{};
+    std::array<char, 256> actionMessage{};
+    bool entityCatalogScanned{};
+    bool entityScanSucceeded{};
+    bool collisionProbeAttempted{};
+    bool collisionProbeAvailable{};
+};
+
 void text(std::string_view value) noexcept {
     ImGui::TextUnformatted(value.data(), value.data() + value.size());
 }
@@ -102,6 +149,49 @@ void text(std::string_view value) noexcept {
 [[nodiscard]] EditorUiState& ui_state() noexcept {
     static EditorUiState state;
     return state;
+}
+
+[[nodiscard]] FunctionalLabState& lab_state() noexcept {
+    static FunctionalLabState state;
+    return state;
+}
+
+[[nodiscard]] const char* loaded_module_path() noexcept {
+    static std::array<char, 512> path{};
+    static bool resolved = false;
+    if (resolved) {
+        return path.data();
+    }
+    resolved = true;
+
+    HMODULE module = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                               | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&g_standaloneTargetVisible),
+                           &module)
+            == FALSE
+        || module == nullptr) {
+        (void)std::snprintf(path.data(), path.size(), "unresolved");
+        return path.data();
+    }
+    std::array<wchar_t, 512> wide{};
+    const DWORD length = GetModuleFileNameW(module, wide.data(), static_cast<DWORD>(wide.size()));
+    if (length == 0 || length >= wide.size()) {
+        (void)std::snprintf(path.data(), path.size(), "unresolved");
+        return path.data();
+    }
+    if (WideCharToMultiByte(CP_UTF8,
+                            0,
+                            wide.data(),
+                            static_cast<int>(length),
+                            path.data(),
+                            static_cast<int>(path.size() - 1),
+                            nullptr,
+                            nullptr)
+        <= 0) {
+        (void)std::snprintf(path.data(), path.size(), "unresolved");
+    }
+    return path.data();
 }
 
 void report_overlay_visibility(bool visible) noexcept {
@@ -235,6 +325,9 @@ void copy_to_buffer(char (&buffer)[Size], std::string_view value) noexcept {
 [[nodiscard]] std::string_view
 runtime_label(const project::scene::ForgeObject& object,
               const workspace::ObjectRuntimeBinding* binding) noexcept {
+    if (object.nativeMapBinding.has_value()) {
+        return "package";
+    }
     if (binding == nullptr) {
         return object.kind == core::ObjectKind::forgeOnly || object.kind == core::ObjectKind::folder
                    ? "local"
@@ -282,7 +375,8 @@ runtime_label(const project::scene::ForgeObject& object,
 [[nodiscard]] bool can_edit_transform(workspace::EditorWorkspace& editor,
                                       const EditorUiState& state,
                                       const project::scene::ForgeObject& object) noexcept {
-    return !state.liveEditsOnly || can_write_live_transform(editor, object);
+    return object.nativeMapBinding.has_value() || !state.liveEditsOnly
+           || can_write_live_transform(editor, object);
 }
 
 [[nodiscard]] std::string_view edit_mode_text(const EditorUiState& state) noexcept {
@@ -425,6 +519,495 @@ void create_object_from_toolbar(workspace::EditorWorkspace& editor,
     (void)editor.create_object(std::string{name}, kind, resource, default_transform(), {});
 }
 
+template <typename... Arguments>
+void set_lab_message(FunctionalLabState& state,
+                     const char* format,
+                     Arguments... arguments) noexcept {
+    (void)std::snprintf(
+        state.actionMessage.data(), state.actionMessage.size(), format, arguments...);
+}
+
+void package_family_text(std::wstring_view family, std::span<char> output) noexcept {
+    if (output.empty()) {
+        return;
+    }
+    std::fill(output.begin(), output.end(), '\0');
+    const std::size_t count = (std::min)(family.size(), output.size() - 1);
+    for (std::size_t index = 0; index < count; ++index) {
+        const wchar_t value = family[index];
+        output[index] = value >= 32 && value <= 126 ? static_cast<char>(value) : '?';
+    }
+}
+
+bool collect_resident_entity(void* context, const package_reader::ClassEntry& entry) noexcept {
+    auto& state = *static_cast<FunctionalLabState*>(context);
+    std::uint8_t objectType = 0;
+    if (!native_spawn::object_type(entry.tag, objectType)) {
+        return true;
+    }
+
+    ResidentEntityCandidate candidate{};
+    candidate.tag = entry.tag;
+    candidate.objectType = objectType;
+    package_family_text(entry.packageFamily, candidate.packageFamily);
+    const std::string_view typeName = research::native_object_type_name(objectType);
+    (void)std::snprintf(candidate.label.data(),
+                        candidate.label.size(),
+                        "0x%08X  %-27.*s  %s",
+                        static_cast<unsigned>(entry.tag),
+                        static_cast<int>(typeName.size()),
+                        typeName.data(),
+                        candidate.packageFamily.data());
+    state.residentEntities.push_back(candidate);
+    ++state.residentTypeCounts[objectType];
+    return true;
+}
+
+void refresh_resident_entity_catalog(FunctionalLabState& state) noexcept {
+    state.residentEntities.clear();
+    state.residentTypeCounts = {};
+    state.entityScan = {};
+    state.entityCatalogScanned = true;
+    state.entityScanSucceeded = false;
+
+    ::sunrise::core::path::Buffer directory{};
+    if (!native_spawn::ready()) {
+        set_lab_message(state, "Resident scan unavailable: native spawn hook is not ready.");
+        return;
+    }
+    if (!item_packages::package_directory(directory)) {
+        set_lab_message(state, "Resident scan unavailable: package directory was not resolved.");
+        return;
+    }
+
+    state.entityScanSucceeded = package_reader::scan_class_entries(directory.chars.data(),
+                                                                   kEntityDefinitionClass,
+                                                                   &collect_resident_entity,
+                                                                   &state,
+                                                                   state.entityScan);
+    package_reader::release_caches();
+    std::sort(state.residentEntities.begin(),
+              state.residentEntities.end(),
+              [](const auto& left, const auto& right) {
+                  if (left.objectType != right.objectType) {
+                      return left.objectType < right.objectType;
+                  }
+                  return left.tag < right.tag;
+              });
+    state.residentEntities.erase(
+        std::unique(state.residentEntities.begin(),
+                    state.residentEntities.end(),
+                    [](const auto& left, const auto& right) { return left.tag == right.tag; }),
+        state.residentEntities.end());
+    if (state.selectedEntityTag == 0 && !state.residentEntities.empty()) {
+        state.selectedEntityTag = state.residentEntities.front().tag;
+    }
+    set_lab_message(state,
+                    state.entityScanSucceeded ? "Resident catalog ready: %zu spawnable definitions."
+                                              : "Resident catalog scan failed after %zu matches.",
+                    state.residentEntities.size());
+}
+
+[[nodiscard]] const ResidentEntityCandidate*
+selected_resident_entity(const FunctionalLabState& state) noexcept {
+    const auto found =
+        std::find_if(state.residentEntities.begin(),
+                     state.residentEntities.end(),
+                     [&state](const auto& row) { return row.tag == state.selectedEntityTag; });
+    return found == state.residentEntities.end() ? nullptr : &*found;
+}
+
+[[nodiscard]] bool select_template(workspace::EditorWorkspace& editor,
+                                   std::string_view templateId) noexcept {
+    if (editor.session_state() != workspace::SessionState::launcher) {
+        editor.return_to_launcher();
+    }
+    const std::span<const workspace::BaseplateTemplate> templates = editor.templates();
+    for (std::size_t index = 0; index < templates.size(); ++index) {
+        if (templates[index].id == templateId) {
+            return editor.select_template(index);
+        }
+    }
+    return false;
+}
+
+void draw_compact_metric(const char* label, const char* value) noexcept {
+    ImGui::TableNextColumn();
+    ImGui::TextDisabled("%s", label);
+    ImGui::TextUnformatted(value);
+}
+
+void draw_pandora_carrier_lab(workspace::EditorWorkspace& editor,
+                              FunctionalLabState& state) noexcept {
+    ImGui::SeparatorText("Live Runtime Test Carrier");
+    ImGui::TextWrapped(
+        "Object spawning and collision probes attach to the currently loaded world. Pandora's "
+        "activity session reaches native prologue loading but stalls before world entry, so it is "
+        "not used as the direct runtime-test carrier.");
+
+    if (ImGui::Button("Launch Stable Tower", ImVec2(190.0F, 0.0F))) {
+        if (select_template(editor, "tower_carrier_control")) {
+            const workspace::LaunchResult result = editor.launch_selected_template();
+            set_lab_message(
+                state, "%.*s", static_cast<int>(result.message.size()), result.message.data());
+        } else {
+            set_lab_message(state, "Tower Carrier Control template is unavailable.");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open Director")) {
+        const workspace::LaunchResult result = editor.request_native_director_handoff();
+        set_lab_message(
+            state, "%.*s", static_cast<int>(result.message.size()), result.message.data());
+    }
+
+    ImGui::SeparatorText("Pandora Package Research");
+    if (ImGui::BeginTable("pandora_metrics", 4, ImGuiTableFlags_SizingStretchSame)) {
+        draw_compact_metric("Map rows", "521");
+        draw_compact_metric("Entity owners", "150");
+        draw_compact_metric("Placement tables", "82");
+        draw_compact_metric("Collision bundles", "3");
+        ImGui::EndTable();
+    }
+
+    if (ImGui::Button("Stage Reduction Draft", ImVec2(190.0F, 0.0F))) {
+        if (select_template(editor, "pandora_carrier_lab")) {
+            const workspace::LaunchResult result = editor.stage_selected_template_package();
+            set_lab_message(
+                state, "%.*s", static_cast<int>(result.message.size()), result.message.data());
+        } else {
+            set_lab_message(state, "Pandora package-research template is unavailable.");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Arm Pandora Redirect")) {
+        if (select_template(editor, "pandora_carrier_lab")) {
+            const workspace::LaunchResult result = editor.arm_selected_template_redirect();
+            set_lab_message(
+                state, "%.*s", static_cast<int>(result.message.size()), result.message.data());
+        } else {
+            set_lab_message(state, "Pandora package-research template is unavailable.");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear Redirect")) {
+        editor.clear_destination_redirect();
+        set_lab_message(state, "Destination redirect cleared.");
+    }
+
+    if (ImGui::BeginTable(
+            "pandora_inventory", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
+        ImGui::TableSetupColumn("Layer");
+        ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 72.0F);
+        ImGui::TableSetupColumn("Experiment status");
+        ImGui::TableHeadersRow();
+        constexpr std::array rows{
+            std::array<std::string_view, 3>{"Sky objects", "2", "preserve candidates"},
+            std::array<std::string_view, 3>{
+                "Static maps", "6", "baseplate tag known; visual scope partial"},
+            std::array<std::string_view, 3>{
+                "Terrain", "19", "strip candidates; collision coupling unknown"},
+            std::array<std::string_view, 3>{
+                "Emitters", "25", "resident entity suppression candidates"},
+            std::array<std::string_view, 3>{
+                "Networked movable props", "55", "resident spawn/removal candidates"},
+            std::array<std::string_view, 3>{
+                "Lights / decals", "5 / 5", "component resource candidates"},
+            std::array<std::string_view, 3>{
+                "Havok path", "1", "baseplate pairing not yet identified"},
+        };
+        for (const auto& row : rows) {
+            ImGui::TableNextRow();
+            for (const std::string_view cell : row) {
+                ImGui::TableNextColumn();
+                text(cell);
+            }
+        }
+        ImGui::EndTable();
+    }
+}
+
+void draw_spawn_settings(FunctionalLabState& state) noexcept {
+    ImGui::SetNextItemWidth(180.0F);
+    ImGui::Combo("Origin", &state.spawnOrigin, "Player\0Surface Raycast\0Camera Ray\0");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0F);
+    if (ImGui::InputInt("Amount", &state.spawnAmount)) {
+        state.spawnAmount = (std::clamp)(state.spawnAmount, 1, 64);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0F);
+    ImGui::InputFloat("Scale", &state.spawnSettings.scale, 0.1F, 1.0F, "%.2f");
+    state.spawnSettings.scale = (std::max)(state.spawnSettings.scale, 0.01F);
+
+    ImGui::SetNextItemWidth(180.0F);
+    ImGui::InputFloat("Vertical lift", &state.spawnSettings.lift, 0.25F, 1.0F, "%.2f");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(180.0F);
+    ImGui::InputFloat("Ray distance", &state.spawnSettings.rayDistance, 5.0F, 25.0F, "%.1f");
+    state.spawnSettings.rayDistance = (std::max)(state.spawnSettings.rayDistance, 1.0F);
+
+    ImGui::InputFloat3("Position offset", state.spawnSettings.offset.data(), "%.2f");
+    ImGui::Checkbox("Use camera rotation", &state.spawnSettings.useCameraRotation);
+    ImGui::SameLine();
+    ImGui::Checkbox("Override quaternion", &state.spawnSettings.overrideRotation);
+    if (state.spawnSettings.overrideRotation) {
+        ImGui::InputFloat4("Rotation quaternion", state.spawnSettings.rotation.data(), "%.3f");
+    }
+}
+
+void draw_resident_entity_picker(FunctionalLabState& state) noexcept {
+    const char* filterPreview =
+        state.objectTypeFilter < 0
+            ? "All object types"
+            : research::native_object_type_name(static_cast<std::uint8_t>(state.objectTypeFilter))
+                  .data();
+    ImGui::SetNextItemWidth(260.0F);
+    if (ImGui::BeginCombo("Type filter", filterPreview)) {
+        if (ImGui::Selectable("All object types", state.objectTypeFilter < 0)) {
+            state.objectTypeFilter = -1;
+        }
+        for (const research::NativeObjectTypeRecord& type : research::native_object_types()) {
+            if (ImGui::Selectable(type.name.data(), state.objectTypeFilter == type.value)) {
+                state.objectTypeFilter = type.value;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    const float listHeight = ImGui::GetTextLineHeightWithSpacing() * 11.0F;
+    if (ImGui::BeginListBox("##resident_entities", ImVec2(-FLT_MIN, listHeight))) {
+        for (const ResidentEntityCandidate& candidate : state.residentEntities) {
+            if (state.objectTypeFilter >= 0 && candidate.objectType != state.objectTypeFilter) {
+                continue;
+            }
+            if (ImGui::Selectable(candidate.label.data(),
+                                  candidate.tag == state.selectedEntityTag)) {
+                state.selectedEntityTag = candidate.tag;
+                state.rawEntityTag = candidate.tag;
+            }
+        }
+        ImGui::EndListBox();
+    }
+}
+
+void draw_object_spawn_lab(FunctionalLabState& state) noexcept {
+    ImGui::SeparatorText("Resident Entity Factory");
+    if (ImGui::Button("Refresh Resident Catalog")) {
+        refresh_resident_entity_catalog(state);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("hook %s  |  request %s  |  %zu resident definitions",
+                        native_spawn::ready() ? "ready" : "unavailable",
+                        native_spawn::busy() ? "busy" : "idle",
+                        state.residentEntities.size());
+    if (!state.entityCatalogScanned) {
+        ImGui::TextDisabled("Catalog has not been scanned in this world epoch.");
+    }
+
+    ImGui::BeginDisabled(!native_spawn::is_tag_resident(kFieldProvenChandelierTag));
+    if (ImGui::Button("Select Known-Good Chandelier")) {
+        state.selectedEntityTag = kFieldProvenChandelierTag;
+        state.rawEntityTag = kFieldProvenChandelierTag;
+        state.objectTypeFilter = 1;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("0x80B6C246 | StaticMesh | spawn + collision field-proven");
+
+    draw_resident_entity_picker(state);
+    ImGui::SetNextItemWidth(180.0F);
+    ImGui::InputScalar("Raw entity tag",
+                       ImGuiDataType_U32,
+                       &state.rawEntityTag,
+                       nullptr,
+                       nullptr,
+                       "%08X",
+                       ImGuiInputTextFlags_CharsHexadecimal);
+    ImGui::SameLine();
+    if (ImGui::Button("Select Raw Tag")) {
+        state.selectedEntityTag = state.rawEntityTag;
+    }
+
+    std::uint8_t selectedType = 0;
+    const bool selectedResident =
+        state.selectedEntityTag != 0
+        && native_spawn::object_type(state.selectedEntityTag, selectedType);
+    const ResidentEntityCandidate* const selected = selected_resident_entity(state);
+    ImGui::Text("Selected: 0x%08X", static_cast<unsigned>(state.selectedEntityTag));
+    ImGui::SameLine();
+    if (selectedResident) {
+        ImGui::Text("Type: %.*s (%u)",
+                    static_cast<int>(research::native_object_type_name(selectedType).size()),
+                    research::native_object_type_name(selectedType).data(),
+                    static_cast<unsigned>(selectedType));
+    } else {
+        ImGui::TextUnformatted("Type: Unknown");
+    }
+    ImGui::SameLine();
+    ImGui::Text("Residency: %s", selectedResident ? "resolved" : "not resolved");
+    if (selected != nullptr) {
+        ImGui::TextDisabled("Package family: %s", selected->packageFamily.data());
+    }
+
+    draw_spawn_settings(state);
+    const bool canSpawn = native_spawn::ready() && !native_spawn::busy() && selectedResident;
+    ImGui::BeginDisabled(!canSpawn);
+    if (ImGui::Button("Run Spawn Test", ImVec2(160.0F, 0.0F))) {
+        const native_spawn::Origin origin = state.spawnOrigin <= 0 ? native_spawn::Origin::player
+                                            : state.spawnOrigin == 1
+                                                ? native_spawn::Origin::surfaceRaycast
+                                                : native_spawn::Origin::cameraRay;
+        const bool accepted = native_spawn::request(
+            state.selectedEntityTag,
+            origin,
+            static_cast<std::uint32_t>((std::clamp)(state.spawnAmount, 1, 64)),
+            state.spawnSettings);
+        set_lab_message(state,
+                        accepted
+                            ? "Spawn request accepted for 0x%08X. Awaiting native factory result."
+                            : "Spawn request rejected for 0x%08X.",
+                        static_cast<unsigned>(state.selectedEntityTag));
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!native_spawn::busy());
+    if (ImGui::Button("Cancel Pending")) {
+        native_spawn::cancel();
+        set_lab_message(state, "Pending spawn request cancelled.");
+    }
+    ImGui::EndDisabled();
+
+    const native_spawn::SpawnObservation observation = native_spawn::last_spawn_observation();
+    if (observation.sequence != 0) {
+        ImGui::Text(
+            "Native result #%llu: %.*s  tag 0x%08X  handle 0x%08X  type %.*s",
+            static_cast<unsigned long long>(observation.sequence),
+            static_cast<int>(native_spawn::spawn_outcome_text(observation.outcome).size()),
+            native_spawn::spawn_outcome_text(observation.outcome).data(),
+            static_cast<unsigned>(observation.tag),
+            static_cast<unsigned>(observation.handle),
+            static_cast<int>(research::native_object_type_name(observation.objectType).size()),
+            research::native_object_type_name(observation.objectType).data());
+    }
+}
+
+void draw_collision_lab(FunctionalLabState& state) noexcept {
+    ImGui::SeparatorText("Collision Evidence");
+    ImGui::SetNextItemWidth(180.0F);
+    ImGui::InputFloat("Probe distance", &state.collisionProbeDistance, 5.0F, 25.0F, "%.1f");
+    state.collisionProbeDistance = (std::max)(state.collisionProbeDistance, 1.0F);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!native_spawn::ready());
+    if (ImGui::Button("Raycast Crosshair (Experimental)")) {
+        state.collisionProbeAttempted = true;
+        state.collisionProbeAvailable =
+            native_spawn::probe_crosshair(state.collisionProbeDistance, state.collisionProbe);
+        set_lab_message(state,
+                        !state.collisionProbeAvailable
+                            ? "Native raycast probe was unavailable."
+                            : (state.collisionProbe.hit ? "Native raycast hit a world surface."
+                                                        : "Native raycast completed with no hit."));
+    }
+    ImGui::EndDisabled();
+
+    if (state.collisionProbeAttempted) {
+        if (!state.collisionProbeAvailable) {
+            ImGui::TextDisabled("Probe unavailable in the current world state.");
+        } else {
+            ImGui::Text("Result: %s  native %s  output changed %s",
+                        state.collisionProbe.hit ? "hit" : "miss",
+                        state.collisionProbe.nativeResult ? "true" : "false",
+                        state.collisionProbe.outputChanged ? "yes" : "no");
+            ImGui::Text("Fraction: %.4f  material: %d",
+                        static_cast<double>(state.collisionProbe.fraction),
+                        state.collisionProbe.material);
+            ImGui::Text("Position: %.3f, %.3f, %.3f",
+                        static_cast<double>(state.collisionProbe.position[0]),
+                        static_cast<double>(state.collisionProbe.position[1]),
+                        static_cast<double>(state.collisionProbe.position[2]));
+            ImGui::Text("Ray start: %.3f, %.3f, %.3f",
+                        static_cast<double>(state.collisionProbe.start[0]),
+                        static_cast<double>(state.collisionProbe.start[1]),
+                        static_cast<double>(state.collisionProbe.start[2]));
+            ImGui::Text("Ray end: %.3f, %.3f, %.3f",
+                        static_cast<double>(state.collisionProbe.end[0]),
+                        static_cast<double>(state.collisionProbe.end[1]),
+                        static_cast<double>(state.collisionProbe.end[2]));
+        }
+    }
+
+    if (ImGui::BeginTable("collision_paths",
+                          4,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV
+                              | ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("Path");
+        ImGui::TableSetupColumn("Input");
+        ImGui::TableSetupColumn("Current capability");
+        ImGui::TableSetupColumn("Evidence boundary");
+        ImGui::TableHeadersRow();
+        constexpr std::array rows{
+            std::array<std::string_view, 4>{"Entity-bundled physics",
+                                            "resident entity tag",
+                                            "native factory spawn",
+                                            "collision is definition-specific"},
+            std::array<std::string_view, 4>{"World raycast",
+                                            "camera ray",
+                                            "PR-derived hit/fraction/material query",
+                                            "native ABI and collision filter unvalidated"},
+            std::array<std::string_view, 4>{"Map Havok placement",
+                                            "DataResource + transform + shape",
+                                            "package parsing / mutation research",
+                                            "standalone native factory not recovered"},
+            std::array<std::string_view, 4>{"Static mesh collision",
+                                            "mesh instance + collision companion",
+                                            "pairing unresolved for Pandora baseplate",
+                                            "visual placement alone is not solid"},
+        };
+        for (const auto& row : rows) {
+            ImGui::TableNextRow();
+            for (const std::string_view cell : row) {
+                ImGui::TableNextColumn();
+                text(cell);
+            }
+        }
+        ImGui::EndTable();
+    }
+}
+
+void draw_object_type_research(const FunctionalLabState& state) noexcept {
+    ImGui::SeparatorText("Native Object Types");
+    if (ImGui::BeginTable("native_object_types",
+                          6,
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV
+                              | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+                          ImVec2(0.0F, ImGui::GetTextLineHeightWithSpacing() * 16.0F))) {
+        ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 42.0F);
+        ImGui::TableSetupColumn("Type");
+        ImGui::TableSetupColumn("Family");
+        ImGui::TableSetupColumn("Resident", ImGuiTableColumnFlags_WidthFixed, 68.0F);
+        ImGui::TableSetupColumn("Evidence");
+        ImGui::TableSetupColumn("Spawn / collision note");
+        ImGui::TableHeadersRow();
+        for (const research::NativeObjectTypeRecord& type : research::native_object_types()) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%u", static_cast<unsigned>(type.value));
+            ImGui::TableNextColumn();
+            text(type.name);
+            ImGui::TableNextColumn();
+            text(type.family);
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", state.residentTypeCounts[type.value]);
+            ImGui::TableNextColumn();
+            text(research::object_type_evidence_text(type.evidence));
+            ImGui::TableNextColumn();
+            text(type.spawnNotes);
+        }
+        ImGui::EndTable();
+    }
+}
+
 void draw_launcher(workspace::EditorWorkspace& editor) noexcept {
     ImGui::TextUnformatted("Open Forge Editor");
     ImGui::Separator();
@@ -467,7 +1050,7 @@ void draw_launcher(workspace::EditorWorkspace& editor) noexcept {
     const bool packageAuthoring = selectedTemplate.id == std::string_view{"blank_baseplate"};
     const bool carrierControl = selectedTemplate.id == std::string_view{"tower_carrier_control"};
     ImGui::BeginDisabled(!selectedTemplate.hasLaunchTarget && !packageAuthoring && !carrierControl);
-    if (ImGui::Button(packageAuthoring ? "Build Map Package" : "Launch In Destiny",
+    if (ImGui::Button(packageAuthoring ? "Build Blank World Draft" : "Launch In Destiny",
                       ImVec2(180.0F, 0.0F))) {
         (void)editor.launch_selected_template();
     }
@@ -1071,7 +1654,8 @@ void draw_transform_inspector(workspace::EditorWorkspace& editor,
     }
     ImGui::EndDisabled();
     if (!editable) {
-        ImGui::TextWrapped("Transform writes require a live runtime object binding.");
+        ImGui::TextWrapped(
+            "Transform writes require a live runtime object or package placement binding.");
     }
 }
 
@@ -1120,6 +1704,13 @@ void draw_runtime_inspector(workspace::EditorWorkspace& editor,
     const workspace::ObjectRuntimeBinding* const binding = editor.runtime_binding(selected.id);
     const std::string_view label = runtime_label(selected, binding);
     ImGui::Text("Runtime: %.*s", static_cast<int>(label.size()), label.data());
+    if (selected.nativeMapBinding.has_value()) {
+        const core::NativeMapBinding& native = *selected.nativeMapBinding;
+        ImGui::Text("Map table: 0x%08X", static_cast<unsigned>(native.tableTag));
+        ImGui::Text("Placement entry: %u", static_cast<unsigned>(native.entryIndex));
+        ImGui::Text("Static parent: 0x%08X", static_cast<unsigned>(native.parentTag));
+        ImGui::TextUnformatted("Write path: staged package build");
+    }
     if (binding == nullptr) {
         return;
     }
@@ -1226,7 +1817,7 @@ void draw_runtime_bridge(workspace::EditorWorkspace& editor, EditorUiState& stat
                 capabilities.has(runtime::Capability::worldTransformWrite) ? "yes" : "no");
 
     ImGui::BeginDisabled(!current.hasLaunchTarget && !packageAuthoring && !carrierControl);
-    if (ImGui::Button(packageAuthoring ? "Build Map Package" : "Launch In Destiny")) {
+    if (ImGui::Button(packageAuthoring ? "Build Blank World Draft" : "Launch In Destiny")) {
         (void)editor.launch_selected_template();
     }
     ImGui::EndDisabled();
@@ -1352,32 +1943,60 @@ void draw_fate() {
     ImGui::Text("Parser status: %s", parsed.ok ? "ok" : "error");
 }
 
+void draw_functional_lab(workspace::EditorWorkspace& editor) {
+    FunctionalLabState& state = lab_state();
+    ImGui::TextUnformatted("Izanami Forge Runtime Lab");
+    ImGui::SameLine();
+    ImGui::TextDisabled("native runtime instrumentation");
+    ImGui::TextDisabled("Loaded module: %s", loaded_module_path());
+    if (state.actionMessage[0] != '\0') {
+        ImGui::TextWrapped("Last action: %s", state.actionMessage.data());
+    }
+
+    if (ImGui::BeginTabBar("izanami_functional_tabs")) {
+        if (ImGui::BeginTabItem("Carrier")) {
+            draw_pandora_carrier_lab(editor, state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Object Spawn")) {
+            draw_object_spawn_lab(state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Collision")) {
+            draw_collision_lab(state);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Resource Types")) {
+            draw_object_type_research(state);
+            ImGui::SeparatorText("Capability Evidence");
+            draw_research();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Scene Draft")) {
+            if (editor.session_state() == workspace::SessionState::launcher) {
+                draw_launcher(editor);
+            } else {
+                draw_workspace(editor);
+            }
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Diagnostics")) {
+            draw_status();
+            ImGui::SeparatorText("Fate Parser");
+            draw_fate();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+}
+
 } // namespace
 
-/** Draws the Izanami Forge launcher/workspace page inside Sunrise's selected UI module frame. */
+/** Draws the Forge runtime laboratory inside Sunrise's selected UI module frame. */
 void draw() noexcept {
     workspace::EditorWorkspace& editor = workspace::workspace();
     editor.initialize_defaults_once();
-
-    ImGui::TextUnformatted("Izanami Forge");
-    ImGui::TextWrapped("Open a Forge authoring workspace from a baseplate or bubble template.");
-    ImGui::Spacing();
-
-    if (editor.session_state() == workspace::SessionState::launcher) {
-        draw_launcher(editor);
-    } else {
-        draw_workspace(editor);
-    }
-
-    if (ImGui::CollapsingHeader("Status")) {
-        draw_status();
-    }
-    if (ImGui::CollapsingHeader("Research")) {
-        draw_research();
-    }
-    if (ImGui::CollapsingHeader("Fate")) {
-        draw_fate();
-    }
+    draw_functional_lab(editor);
 }
 
 /** Draws the standalone in-game Forge overlay outside the Sunrise module browser. */
@@ -1391,34 +2010,58 @@ bool draw_standalone() noexcept {
         return false;
     }
 
-    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, {0.5F, 0.5F});
-    ImGui::SetNextWindowSize(
-        {viewport->Size.x * kStandaloneViewportScale, viewport->Size.y * kStandaloneViewportScale},
-        ImGuiCond_Appearing);
-
-    bool open = true;
+    const bool target = g_standaloneTargetVisible.load(std::memory_order_acquire);
+    const float step = (std::clamp)(ImGui::GetIO().DeltaTime * 8.5F, 0.0F, 1.0F);
+    g_standaloneAnimation += target ? step : -step;
+    g_standaloneAnimation = (std::clamp)(g_standaloneAnimation, 0.0F, 1.0F);
+    if (!target && g_standaloneAnimation <= 0.0F) {
+        g_standaloneAnimating.store(false, std::memory_order_release);
+        forge_shell::release_input();
+        return false;
+    }
+    const float eased = 1.0F - (1.0F - g_standaloneAnimation) * (1.0F - g_standaloneAnimation);
+    ImGui::SetNextWindowPos({viewport->Pos.x, viewport->Pos.y + (1.0F - eased) * 22.0F},
+                            ImGuiCond_Always);
+    ImGui::SetNextWindowSize(viewport->Size, ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, eased);
     const bool submitContents =
-        ImGui::Begin("Izanami Forge##standalone", &open, kStandaloneWindowFlags);
+        ImGui::Begin("Izanami Forge##standalone", nullptr, kStandaloneWindowFlags);
     if (submitContents) {
-        draw();
+        workspace::EditorWorkspace& editor = workspace::workspace();
+        editor.initialize_defaults_once();
+        if (target && !runtime::gameplay_editor_mode::active()) {
+            ensure_overlay_navigation();
+        }
+        forge_shell::draw(editor);
     }
     ImGui::End();
-
-    if (!open) {
-        (void)set_standalone_visible(false);
-    }
+    ImGui::PopStyleVar();
     return true;
 }
 
 /** @return True while the standalone Forge overlay should capture input. */
 bool standalone_visible() noexcept {
-    return g_standaloneVisible.load(std::memory_order_acquire);
+    return g_standaloneTargetVisible.load(std::memory_order_acquire)
+           || g_standaloneAnimating.load(std::memory_order_acquire);
+}
+
+bool standalone_camera_control_active() noexcept {
+    return g_standaloneTargetVisible.load(std::memory_order_acquire)
+           && forge_shell::camera_control_active();
 }
 
 /** Sets standalone overlay visibility directly. */
 bool set_standalone_visible(bool visible) noexcept {
-    const bool prior = g_standaloneVisible.exchange(visible, std::memory_order_acq_rel);
+    const bool prior = g_standaloneTargetVisible.exchange(visible, std::memory_order_acq_rel);
+    if (!visible) {
+        forge_shell::release_input();
+        runtime::gameplay_editor_mode::leave_overlay_navigation();
+    }
     if (prior != visible) {
+        g_standaloneAnimating.store(true, std::memory_order_release);
+        if (visible) {
+            ensure_overlay_navigation();
+        }
         report_overlay_visibility(visible);
     }
     return true;
@@ -1429,7 +2072,7 @@ bool toggle_standalone_for_key(UINT virtualKey) noexcept {
     if (virtualKey != kStandaloneToggleKey) {
         return false;
     }
-    const bool next = !standalone_visible();
+    const bool next = !g_standaloneTargetVisible.load(std::memory_order_acquire);
     (void)set_standalone_visible(next);
     if (next) {
         (void)::sunrise::core::ui::runtime::set_visible(false);

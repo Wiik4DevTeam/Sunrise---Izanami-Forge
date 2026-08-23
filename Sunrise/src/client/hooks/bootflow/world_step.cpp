@@ -75,6 +75,11 @@ bool in_orbit() noexcept {
     return is_fresh_step(kOrbit);
 }
 
+/** Reports Destiny's current boot-flow step to scoped launch recovery code. */
+std::int32_t current_step() noexcept {
+    return read_step();
+}
+
 /** Maps the client's own boot-flow step onto the world phase. */
 void observe_world_step() noexcept {
     // A missing accessor leaves the phase alone. A step of -1 is a real answer: off a destination.

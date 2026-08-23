@@ -2,10 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "../../core/ids.h"
+#include "../../core/native_map_binding.h"
 #include "../../core/transform.h"
 
 namespace sunrise::izanami::project::scene {
@@ -29,6 +31,7 @@ struct ForgeObject {
     std::string editorName{};
     bool editorVisible{true};
     bool editorLocked{};
+    std::optional<core::NativeMapBinding> nativeMapBinding{};
     std::vector<NativeOverrideRecord> nativeOverrides{};
     std::vector<ScriptBinding> scripts{};
 };

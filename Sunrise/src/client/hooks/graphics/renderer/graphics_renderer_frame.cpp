@@ -65,6 +65,14 @@ static_assert(WM_XBUTTONDBLCLK <= WM_MOUSELAST);
     }
 }
 
+/** Forge consumes navigation speed and vertical-flight controls while raw look stays native. */
+[[nodiscard]] bool is_forge_navigation_control(UINT message, WPARAM word) noexcept {
+    if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL) {
+        return true;
+    }
+    return is_keyboard_input(message) && (word == 'Q' || word == 'E');
+}
+
 /**
  * Applies a visibility change to Dear ImGui input and drops events queued while hidden.
  * @param visible Current Core visibility state.
@@ -146,7 +154,7 @@ void render_frame_locked() noexcept {
     // A hidden surface still draws until its close animation ends, so the layout decides. The
     // HUD, running-work and notice overlays draw whether the surface is open or not. The HUD
     // goes first, so the surface stays above it when the two meet.
-    const bool hudDrawn = core::ui::hud::draw(visibility.enabled);
+    const bool hudDrawn = core::ui::hud::draw(visibility.enabled && !forgeVisible);
     const bool surfaceDrawn = core::ui::layout::render(visibility.visible);
     const bool forgeDrawn = ::sunrise::izanami::editor::ui::draw_standalone();
     const bool busyDrawn = core::ui::busy::draw();
@@ -170,6 +178,9 @@ bool handle_window_message(HWND window, UINT message, WPARAM word, LPARAM value)
 
     const core::ui::runtime::VisibilitySnapshot visibility = core::ui::runtime::snapshot();
     const bool forgeVisible = ::sunrise::izanami::editor::ui::standalone_visible();
+    const bool forgeNavigation =
+        !visibility.visible && forgeVisible
+        && ::sunrise::izanami::editor::ui::standalone_camera_control_active();
     const bool modalVisible = visibility.visible || forgeVisible;
     transition_input_visibility_locked(modalVisible);
     if (!modalVisible) {
@@ -180,8 +191,10 @@ bool handle_window_message(HWND window, UINT message, WPARAM word, LPARAM value)
 
     (void)ImGui_ImplWin32_WndProcHandler(window, message, word, value);
     // A visible UI is modal: no mouse, keyboard or raw input reaches the game, hit test aside.
-    const bool capture =
+    const bool modalInput =
         is_mouse_input(message) || is_keyboard_input(message) || is_raw_input(message);
+    const bool capture = (!forgeNavigation && modalInput)
+                         || (forgeNavigation && is_forge_navigation_control(message, word));
     ReleaseSRWLockExclusive(&g_rendererLock);
     return capture;
 }

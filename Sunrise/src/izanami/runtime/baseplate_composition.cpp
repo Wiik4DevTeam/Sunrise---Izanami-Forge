@@ -5,10 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cmath>
 #include <string_view>
 #include <vector>
 
@@ -19,7 +19,6 @@
 #include "../../core/filesystem/path.h"
 #include "../../core/logging/log.h"
 #include "../../middleware/content/packages/reader/reader.h"
-#include "carrier_probe.h"
 #include "custom_package_builder.h"
 
 namespace sunrise::izanami::runtime::baseplate_composition {
@@ -86,10 +85,11 @@ void report(const char* stage,
                                       static_cast<double>(kWorkspaceOrigin[1]),
                                       static_cast<double>(kWorkspaceOrigin[2]));
     if (written > 0) {
-        core::log::write(core::log::Channel::client,
-                         result == std::string_view{"ok"} ? core::log::Level::info
-                                                          : core::log::Level::warn,
-                         {line.data(), static_cast<std::size_t>(written)});
+        ::sunrise::core::log::write(::sunrise::core::log::Channel::client,
+                                    result == std::string_view{"ok"}
+                                        ? ::sunrise::core::log::Level::info
+                                        : ::sunrise::core::log::Level::warn,
+                                    {line.data(), static_cast<std::size_t>(written)});
     }
 }
 
@@ -109,9 +109,9 @@ bool collect_entity(void* context, const package_reader::ClassEntry& entry) noex
         return true;
     }
 
-    core::path::Buffer directory{};
-    if (!core::path::module_directory(GetModuleHandleW(nullptr), directory)
-        || !core::path::append(directory, L"\\packages")) {
+    ::sunrise::core::path::Buffer directory{};
+    if (!::sunrise::core::path::module_directory(GetModuleHandleW(nullptr), directory)
+        || !::sunrise::core::path::append(directory, L"\\packages")) {
         report("catalog", "package_directory_missing");
         return false;
     }
@@ -183,9 +183,9 @@ void enable_isolated_navigation() noexcept {
 } // namespace
 
 /** Prepares an isolated native baseplate composition for the next world arrival. */
-bool arm() noexcept {
-    carrier_probe::inspect("vfx_shade_test", "map:pandora:root");
-    const bool packageStaged = custom_package_builder::stage_map_root("map:pandora:root");
+bool arm(std::span<const custom_package_builder::MapPlacementEdit> edits) noexcept {
+    const bool packageStaged =
+        custom_package_builder::stage_map_root("map:city_tower_d2:root", edits);
     g_relocated = false;
     g_platformRequested = false;
     g_relocationStarted = 0;

@@ -1,0 +1,57 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read",
+  "status": "complete",
+  "outputDir": "/workspace/.codex/trusted-read/master-20260821-component-scenery",
+  "target": {
+    "documentId": "1bK5K4ym9Sgp43FvvU1KY1v4I78q_YhAzJMLEAHFRtb4",
+    "title": "Izanami_Forge_Master_Research_Developer_Onboarding",
+    "revisionId": "AIroW34JGwMSz5Wx6WqEHN5CL2H1x6yn3phmUJJj4MWTYZSNSftcqmZWLD5imGGCgRjaELthis9CR0DUJ6exMYMYbQjFG5gSPf-QhbxEHko",
+    "documentUrl": "https://docs.google.com/document/d/1bK5K4ym9Sgp43FvvU1KY1v4I78q_YhAzJMLEAHFRtb4",
+    "selectedTabId": "t.0"
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {},
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "files": {
+    "document_result": {
+      "path": "/workspace/.codex/trusted-read/master-20260821-component-scenery/document-result.json",
+      "bytes": 6064896,
+      "sha256": "7b1237746804741ad5dbace39f190219d562874d972923ef9717500da29689d5"
+    },
+    "control_inventory": {
+      "path": "/workspace/.codex/trusted-read/master-20260821-component-scenery/control-inventory.json",
+      "bytes": 1056,
+      "sha256": "39f888b8f40a40f1560619eb99884cefeb5905c22cb9b9291a71fa5637a146f6"
+    },
+    "document_outline": {
+      "path": "/workspace/.codex/trusted-read/master-20260821-component-scenery/document-outline.json",
+      "bytes": 1141831,
+      "sha256": "f591e5295cd6153e77f91dd7a7171fd9554b7dbb2caa00601e968833805567ed"
+    },
+    "document_text": {
+      "path": "/workspace/.codex/trusted-read/master-20260821-component-scenery/document-text.md",
+      "bytes": 501885,
+      "sha256": "deab621dc271aa5ef94535bac0deb1b5af44424ca969724af3fe76d723759e0f"
+    },
+    "receipt": {
+      "path": "/workspace/.codex/trusted-read/master-20260821-component-scenery/receipt.json",
+      "bytes": 987,
+      "sha256": "3d713d4be6c0ba719696cc2f75f72c0a3eaebfc279617fcd3903964f88e3ccbf"
+    }
+  },
+  "error": null
+}

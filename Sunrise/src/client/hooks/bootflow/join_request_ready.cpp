@@ -9,7 +9,6 @@
 
 #include "../../../core/logging/log.h"
 #include "../../../core/settings/settings.h"
-#include "../../../state/activity/forced/activity_forced_destination.h"
 #include "../../hooking/detour.h"
 #include "internal.h"
 
@@ -252,8 +251,7 @@ void report(bool native, bool forced) noexcept {
 __declspec(noinline) bool __fastcall join_request_ready(void* client) noexcept {
     const JoinRequestReady original = g_original.load(std::memory_order_acquire);
     const bool native = original != nullptr && original(client);
-    const bool forced = !native && core::settings::get().client.forceJoinRequestReady
-                        && !state::activity::forced::override_active();
+    const bool forced = !native && core::settings::get().client.forceJoinRequestReady;
     if (g_lastNative.exchange(native, std::memory_order_relaxed) != native
         || !g_seen.exchange(true, std::memory_order_relaxed)) {
         report(native, forced);

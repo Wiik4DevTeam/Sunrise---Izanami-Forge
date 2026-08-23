@@ -31,6 +31,25 @@ required_capacity(HMODULE module, std::size_t inputSize, std::size_t& capacity) 
                             std::size_t& written) noexcept;
 
 /**
+ * Compresses with an explicitly selected Oodle compressor enum.
+ * @param module Loaded module
+ * that owns the compression exports.
+ * @param compressor Codec enum recovered from the source
+ * stream.
+ * @param input Uncompressed bytes.
+ * @param output Caller storage sized by
+ * required_capacity.
+ * @param written Receives the compressed byte count.
+ * @return True when the
+ * whole stream fits and compression works.
+ */
+[[nodiscard]] bool compress_with_codec(HMODULE module,
+                                       int compressor,
+                                       std::span<const std::byte> input,
+                                       std::span<std::byte> output,
+                                       std::size_t& written) noexcept;
+
+/**
  * Decompresses one package block, whose real size is not recorded.
  * Oodle rejects any size that is not a multiple of the decode step, so the request steps down
  * until one is accepted.

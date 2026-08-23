@@ -11,6 +11,7 @@
 #include <bit>
 
 #include "../../../../core/ui/runtime/ui_visibility_runtime.h"
+#include "../../../../izanami/editor/ui/izanami_panel.h"
 #include "input.h"
 
 namespace sunrise::client::hooks::graphics::input {
@@ -63,7 +64,12 @@ LRESULT CALLBACK raw_window_procedure(HWND window,
 
     // A captured message still goes to the default procedure, or the system keeps the raw-input
     // buffer alive. That is also the fallback when there is no procedure to forward to.
-    const bool captured = message == WM_INPUT && core::ui::runtime::snapshot().visible;
+    const bool forgeVisible = ::sunrise::izanami::editor::ui::standalone_visible();
+    const bool forgeCameraControl =
+        ::sunrise::izanami::editor::ui::standalone_camera_control_active();
+    const bool interfaceVisible =
+        core::ui::runtime::snapshot().visible || (forgeVisible && !forgeCameraControl);
+    const bool captured = message == WM_INPUT && interfaceVisible;
     const bool forward = !captured && original != nullptr;
     const LRESULT result = forward ? CallWindowProcW(original, window, message, word, value)
                                    : DefWindowProcW(window, message, word, value);

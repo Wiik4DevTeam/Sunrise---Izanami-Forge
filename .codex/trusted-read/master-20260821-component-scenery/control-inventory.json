@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "kind": "google-docs-trusted-read-context",
+  "target": {
+    "documentId": "1bK5K4ym9Sgp43FvvU1KY1v4I78q_YhAzJMLEAHFRtb4",
+    "title": "Izanami_Forge_Master_Research_Developer_Onboarding",
+    "revisionId": "AIroW34JGwMSz5Wx6WqEHN5CL2H1x6yn3phmUJJj4MWTYZSNSftcqmZWLD5imGGCgRjaELthis9CR0DUJ6exMYMYbQjFG5gSPf-QhbxEHko",
+    "documentUrl": "https://docs.google.com/document/d/1bK5K4ym9Sgp43FvvU1KY1v4I78q_YhAzJMLEAHFRtb4",
+    "selectedTabId": "t.0"
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "derivedControlInventory": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "nativeElementCounts": {},
+    "tabsScanned": [
+      "t.0"
+    ],
+    "controls": [],
+    "nativeElements": []
+  },
+  "editGuidance": {
+    "advisoryOnly": true,
+    "requiresTargetedPreservation": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope.",
+    "warnings": []
+  }
+}

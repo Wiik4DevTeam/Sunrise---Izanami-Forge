@@ -12,6 +12,12 @@ namespace {
 
 /** Bits in one byte. The name field is 40 of them, back to back. */
 constexpr std::size_t kBitsPerByte = 8;
+/** The descriptor starts with reason, source activity, then destination activity. */
+constexpr std::size_t kReasonWidth = 4;
+constexpr std::size_t kActivityIndexWidth = 12;
+constexpr std::size_t kDestinationActivityBit = kReasonWidth + kActivityIndexWidth;
+/** Activity indices use a wire bias of one, so zero is encoded as one. */
+constexpr std::int32_t kActivityIndexBias = 1;
 /** Every name byte is encoded with this bias, and padding is a biased zero. */
 constexpr unsigned kPackageNameBias = 128;
 /** The most significant bit of a byte, where each packed field starts. */
@@ -40,6 +46,17 @@ constexpr void write_bit(std::span<std::byte> bits, std::size_t bitOffset, bool 
 void write_byte(std::span<std::byte> bits, std::size_t bitOffset, unsigned value) noexcept {
     for (std::size_t index = 0; index < kBitsPerByte; ++index) {
         const bool set = (value >> (kBitsPerByte - 1 - index) & 1U) != 0;
+        write_bit(bits, bitOffset + index, set);
+    }
+}
+
+/** Writes one most-significant-bit-first integer into a fixed descriptor field. */
+constexpr void write_value(std::span<std::byte> bits,
+                           std::size_t bitOffset,
+                           std::size_t width,
+                           std::uint32_t value) noexcept {
+    for (std::size_t index = 0; index < width; ++index) {
+        const bool set = (value >> (width - 1 - index) & 1U) != 0;
         write_bit(bits, bitOffset + index, set);
     }
 }
@@ -149,6 +166,27 @@ bool override_active() noexcept {
     ForcedDestination value{};
     snapshot(value);
     return active(value);
+}
+
+/** Rewrites the scalar and replayed descriptor forms of one carrier activity index. */
+bool rewrite_carrier_activity(destination::DestinationSelection& selection,
+                              std::int16_t activityIndex) noexcept {
+    if (activityIndex < destination::kAbsentActivityIndex
+        || activityIndex > destination::kMaximumActivityIndex) {
+        return false;
+    }
+    if (selection.descriptorBitLength != 0) {
+        const std::size_t fieldEnd = kDestinationActivityBit + kActivityIndexWidth;
+        if (selection.descriptorBitLength < fieldEnd) {
+            return false;
+        }
+        write_value(selection.descriptorBits,
+                    kDestinationActivityBit,
+                    kActivityIndexWidth,
+                    static_cast<std::uint32_t>(activityIndex + kActivityIndexBias));
+    }
+    selection.activityIndex = activityIndex;
+    return true;
 }
 
 /** Overwrites one committed destination with the forced one. */

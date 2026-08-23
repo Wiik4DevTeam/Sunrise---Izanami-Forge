@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <intrin.h>
 #include <string_view>
 
 #include "../../../core/logging/log.h"
@@ -32,10 +31,25 @@ constexpr std::uint32_t kPulseFrames = 4;
 constexpr std::uint32_t kFallbackDirectorKey = 'M';
 /** Native boot-flow step `setup:activity_session_creation`. */
 constexpr std::int32_t kActivitySessionCreation = 30;
+/** Native boot-flow cleanup step used to rebuild the local activity selection. */
+constexpr std::int32_t kCleanup = 28;
 /** Native world-controller goal reached by a successful Director activity launch. */
 constexpr std::int32_t kInWorldGoal = 38;
-/** Goal rows use mode one in orbit and mode two for an activity transition. */
-constexpr std::uint8_t kActivityGoalMode = 2;
+/** Native boot-flow step that waits for activity intro metadata. */
+constexpr std::int32_t kPrologueIntroLoading = 32;
+/** Native step immediately after intro loading and before the world transition. */
+constexpr std::int32_t kOrbitOutro = 34;
+/** A carrier rebuild should complete in one cleanup-to-orbit cycle. */
+constexpr std::uint64_t kCarrierRebuildTimeoutMs = 15'000;
+/** A resident catalog destination should finish its intro gate well inside this window. */
+constexpr std::uint64_t kPrologueRescueDelayMs = 1'500;
+/** Retry interval when the state manager has not accepted the recovery request yet. */
+constexpr std::uint64_t kPrologueRescueRetryMs = 1'000;
+/** Stop recovery rather than retaining a stale launch forever. */
+constexpr std::uint64_t kPrologueRescueTimeoutMs = 12'000;
+
+static_assert(static_cast<std::uint8_t>(ActivityGoalMode::orbitCarrier) == 1);
+static_assert(static_cast<std::uint8_t>(ActivityGoalMode::activityTransition) == 2);
 
 /**
  * Wrapper that asks the boot-flow manager for cleanup state 0x1c. The caller's argument is the
@@ -113,9 +127,18 @@ std::atomic<RequestBootflowState> g_requestBootflowState{nullptr};
 std::atomic<GetLiveSession> g_getLiveSession{nullptr};
 std::atomic<PublishSessionGoal> g_publishSessionGoal{nullptr};
 std::atomic_bool g_activityLaunchPending{false};
+std::atomic_bool g_activityLaunchRebuildCarrier{false};
+std::atomic_uint8_t g_activityLaunchGoalMode{
+    static_cast<std::uint8_t>(ActivityGoalMode::activityTransition)};
+std::atomic_bool g_activityLaunchAwaitingCarrier{false};
+std::atomic_bool g_activityLaunchLeftOrbit{false};
+std::atomic_uint64_t g_activityLaunchStartedTick{0};
+std::atomic_bool g_activityPrologueRescueArmed{false};
+std::atomic_uint64_t g_activityPrologueRescueNextTick{0};
+std::atomic_uint32_t g_activityPrologueRescueAttempts{0};
 std::atomic_bool g_carrierOverrideArmed{false};
+std::atomic_bool g_carrierPrepared{false};
 std::atomic<std::int16_t> g_carrierTarget{-1};
-std::atomic<void*> g_secondarySelectionReturn{nullptr};
 hooking::detour::Handle g_secondarySelectionHandle{};
 std::atomic_bool g_secondarySelectionInstalled{false};
 
@@ -160,22 +183,27 @@ void report_carrier_observation(std::string_view action,
 }
 
 /**
- * Substitutes the configured, validated fallback activity only for the setup caller resolved
- * above. The server still owns the forced package rewrite; this supplies the client-side activity
- * identity that its world loader requires before it can bind an ActivityClient.
+ * Substitutes the configured, validated fallback activity only while an explicit Forge launch is
+ * rebuilding the local selection. The getter has more than one native caller in the current
+ * build, so the one-shot armed state is the ownership boundary. The server still owns the forced
+ * package rewrite; this supplies the client-side activity identity its world loader requires.
  */
 std::uint16_t* __fastcall get_secondary_selection(std::uint16_t* output) noexcept {
     const auto original =
         reinterpret_cast<GetSecondarySelection>(g_secondarySelectionHandle.original);
     std::uint16_t* const result = original != nullptr ? original(output) : output;
-    if (result == nullptr || output == nullptr
-        || _ReturnAddress() != g_secondarySelectionReturn.load(std::memory_order_acquire)) {
+    if (result == nullptr || output == nullptr) {
         return result;
     }
 
     const std::uint16_t native = *result;
     const std::int16_t target = g_carrierTarget.load(std::memory_order_acquire);
+    if (!g_carrierOverrideArmed.load(std::memory_order_acquire)) {
+        return result;
+    }
     if (native != 0) {
+        g_carrierOverrideArmed.store(false, std::memory_order_release);
+        g_carrierPrepared.store(true, std::memory_order_release);
         report_carrier_observation("preserve_nonzero", native, target);
         return result;
     }
@@ -183,6 +211,7 @@ std::uint16_t* __fastcall get_secondary_selection(std::uint16_t* output) noexcep
         return result;
     }
     *result = static_cast<std::uint16_t>(target);
+    g_carrierPrepared.store(true, std::memory_order_release);
     report_carrier_observation("substitute", native, target);
     return result;
 }
@@ -249,7 +278,6 @@ std::uint16_t* __fastcall get_secondary_selection(std::uint16_t* output) noexcep
     if (!hooking::detour::install(spec, g_secondarySelectionHandle)) {
         return false;
     }
-    g_secondarySelectionReturn.store(call + kSecondarySelectionReturn, std::memory_order_release);
     g_secondarySelectionInstalled.store(true, std::memory_order_release);
     return true;
 }
@@ -271,8 +299,28 @@ void report_activity_launch(std::string_view stage, std::string_view result) noe
     }
 }
 
+/** Logs the scoped transition used when a resident catalog map has no usable intro metadata. */
+void report_prologue_rescue(std::string_view result,
+                            std::int32_t step,
+                            std::uint32_t attempt) noexcept {
+    std::array<char, 176> line{};
+    const int written = std::snprintf(
+        line.data(),
+        line.size(),
+        "ev=director_activity_launch stage=prologue_rescue result=%.*s step=%d attempt=%u",
+        static_cast<int>(result.size()),
+        result.data(),
+        static_cast<int>(step),
+        static_cast<unsigned>(attempt));
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         result == "timeout" ? core::log::Level::warn : core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
 /** Logs publication of Izanami's goal through Destiny's session-parameter system. */
-void report_goal_publish(std::string_view result) noexcept {
+void report_goal_publish(std::string_view result, ActivityGoalMode mode) noexcept {
     std::array<char, 160> line{};
     const int written = std::snprintf(line.data(),
                                       line.size(),
@@ -281,7 +329,7 @@ void report_goal_publish(std::string_view result) noexcept {
                                       static_cast<int>(result.size()),
                                       result.data(),
                                       kInWorldGoal,
-                                      static_cast<unsigned>(kActivityGoalMode));
+                                      static_cast<unsigned>(mode));
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          result == "ok" ? core::log::Level::info : core::log::Level::warn,
@@ -294,19 +342,19 @@ void report_goal_publish(std::string_view result) noexcept {
  * advances the goal revision and queues replication, so Destiny computes matching peer-property
  * checksums before activity-session creation consumes the goal.
  */
-[[nodiscard]] bool publish_activity_goal() noexcept {
+[[nodiscard]] bool publish_activity_goal(ActivityGoalMode mode) noexcept {
     const GetLiveSession getSession = g_getLiveSession.load(std::memory_order_acquire);
     const PublishSessionGoal publishGoal = g_publishSessionGoal.load(std::memory_order_acquire);
     void* session = nullptr;
     if (getSession == nullptr || publishGoal == nullptr
         || !getSession(kActivePrivateSession, &session) || session == nullptr) {
-        report_goal_publish("session_missing");
+        report_goal_publish("session_missing", mode);
         return false;
     }
 
     void* const parameters = static_cast<std::byte*>(session) + kSessionParametersOffset;
-    const bool published = publishGoal(parameters, kInWorldGoal, kActivityGoalMode);
-    report_goal_publish(published ? "ok" : "rejected");
+    const bool published = publishGoal(parameters, kInWorldGoal, static_cast<std::uint8_t>(mode));
+    report_goal_publish(published ? "ok" : "rejected", mode);
     return published;
 }
 
@@ -394,7 +442,7 @@ void report_release(std::uint32_t virtualKey) noexcept {
 
 } // namespace
 
-/** Installs and arms the exact-caller local carrier before orbit constructs its selection. */
+/** Installs the exact-caller local carrier before orbit constructs its selection. */
 bool install_local_carrier() noexcept {
     if (g_secondarySelectionInstalled.load(std::memory_order_acquire)) {
         return true;
@@ -413,20 +461,36 @@ bool install_local_carrier() noexcept {
         report_carrier_install("attach_failed", target);
         return false;
     }
-    g_carrierOverrideArmed.store(true, std::memory_order_release);
+    g_carrierOverrideArmed.store(false, std::memory_order_release);
     report_carrier_install("installed", target);
     return true;
 }
 
 /** Queues Destiny's own orbit-to-activity transition. */
-ActivityLaunchResult request_activity_launch() noexcept {
+ActivityLaunchResult request_activity_launch(bool rebuildCarrier,
+                                             ActivityGoalMode goalMode,
+                                             bool rescueStalledPrologue) noexcept {
     ActivityLaunchResult result{};
     result.targetResolved = resolve_activity_launch_target() && resolve_session_goal_targets()
                             && g_secondarySelectionInstalled.load(std::memory_order_acquire);
     result.inOrbit = bootflow::in_orbit();
     result.requested = result.targetResolved && result.inOrbit;
     if (result.requested) {
+        g_carrierPrepared.store(false, std::memory_order_release);
+        g_carrierOverrideArmed.store(rebuildCarrier, std::memory_order_release);
+        g_activityLaunchRebuildCarrier.store(rebuildCarrier, std::memory_order_release);
+        g_activityLaunchGoalMode.store(static_cast<std::uint8_t>(goalMode),
+                                       std::memory_order_release);
+        g_activityLaunchLeftOrbit.store(false, std::memory_order_release);
+        g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
+        g_activityLaunchStartedTick.store(GetTickCount64(), std::memory_order_release);
+        g_activityPrologueRescueArmed.store(rescueStalledPrologue, std::memory_order_release);
+        g_activityPrologueRescueNextTick.store(0, std::memory_order_release);
+        g_activityPrologueRescueAttempts.store(0, std::memory_order_release);
         g_activityLaunchPending.store(true, std::memory_order_release);
+    } else {
+        g_carrierOverrideArmed.store(false, std::memory_order_release);
+        g_activityPrologueRescueArmed.store(false, std::memory_order_release);
     }
     report_activity_launch(
         "request",
@@ -462,20 +526,101 @@ HandoffResult request_open_destinations() noexcept {
 /** Emits and releases any pending Director key pulse. */
 void poll() noexcept {
     if (g_activityLaunchPending.exchange(false, std::memory_order_acq_rel)) {
+        const bool rebuildCarrier = g_activityLaunchRebuildCarrier.load(std::memory_order_acquire);
+        const auto goalMode =
+            static_cast<ActivityGoalMode>(g_activityLaunchGoalMode.load(std::memory_order_acquire));
         const GetBootflowManager getManager = g_getBootflowManager.load(std::memory_order_acquire);
         const RequestBootflowState requestState =
             g_requestBootflowState.load(std::memory_order_acquire);
         if (getManager == nullptr || requestState == nullptr) {
-            report_activity_launch("invoke", "target_missing");
+            g_carrierOverrideArmed.store(false, std::memory_order_release);
+            report_activity_launch(rebuildCarrier ? "carrier_rebuild" : "invoke", "target_missing");
         } else if (!bootflow::in_orbit()) {
-            report_activity_launch("invoke", "left_orbit");
-        } else if (!publish_activity_goal()) {
+            g_carrierOverrideArmed.store(false, std::memory_order_release);
+            report_activity_launch(rebuildCarrier ? "carrier_rebuild" : "invoke", "left_orbit");
+        } else if (rebuildCarrier) {
+            void* const manager = getManager();
+            if (manager == nullptr) {
+                g_carrierOverrideArmed.store(false, std::memory_order_release);
+                report_activity_launch("carrier_rebuild", "manager_missing");
+                return;
+            }
+            g_activityLaunchAwaitingCarrier.store(true, std::memory_order_release);
+            requestState(manager, kCleanup, kDefaultStateChangeReason);
+            report_activity_launch("carrier_rebuild", "ok");
+        } else if (!publish_activity_goal(goalMode)) {
             report_activity_launch("invoke", "goal_publish_failed");
         } else if (void* const manager = getManager(); manager != nullptr) {
             requestState(manager, kActivitySessionCreation, kDefaultStateChangeReason);
             report_activity_launch("invoke", "ok");
         } else {
             report_activity_launch("invoke", "manager_missing");
+        }
+    }
+
+    if (g_activityLaunchAwaitingCarrier.load(std::memory_order_acquire)) {
+        const auto goalMode =
+            static_cast<ActivityGoalMode>(g_activityLaunchGoalMode.load(std::memory_order_acquire));
+        const bool inOrbit = bootflow::in_orbit();
+        if (!inOrbit) {
+            g_activityLaunchLeftOrbit.store(true, std::memory_order_release);
+        }
+
+        const std::uint64_t started = g_activityLaunchStartedTick.load(std::memory_order_acquire);
+        if (started == 0 || GetTickCount64() - started >= kCarrierRebuildTimeoutMs) {
+            g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
+            g_carrierOverrideArmed.store(false, std::memory_order_release);
+            report_activity_launch("carrier_rebuild", "timeout");
+        } else if (inOrbit && g_activityLaunchLeftOrbit.load(std::memory_order_acquire)
+                   && g_carrierPrepared.load(std::memory_order_acquire)) {
+            g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
+            const GetBootflowManager getManager =
+                g_getBootflowManager.load(std::memory_order_acquire);
+            const RequestBootflowState requestState =
+                g_requestBootflowState.load(std::memory_order_acquire);
+            if (getManager == nullptr || requestState == nullptr) {
+                report_activity_launch("invoke", "target_missing");
+            } else if (!publish_activity_goal(goalMode)) {
+                report_activity_launch("invoke", "goal_publish_failed");
+            } else if (void* const manager = getManager(); manager != nullptr) {
+                requestState(manager, kActivitySessionCreation, kDefaultStateChangeReason);
+                report_activity_launch("invoke", "ok");
+            } else {
+                report_activity_launch("invoke", "manager_missing");
+            }
+        }
+    }
+
+    if (g_activityPrologueRescueArmed.load(std::memory_order_acquire)) {
+        const std::uint64_t now = GetTickCount64();
+        const std::uint64_t started = g_activityLaunchStartedTick.load(std::memory_order_acquire);
+        const std::int32_t step = bootflow::current_step();
+        const std::uint32_t attempts =
+            g_activityPrologueRescueAttempts.load(std::memory_order_acquire);
+        if (step > kPrologueIntroLoading) {
+            g_activityPrologueRescueArmed.store(false, std::memory_order_release);
+            report_prologue_rescue("advanced", step, attempts);
+        } else if (started != 0 && now - started >= kPrologueRescueTimeoutMs) {
+            g_activityPrologueRescueArmed.store(false, std::memory_order_release);
+            report_prologue_rescue("timeout", step, attempts);
+        } else if (step == kPrologueIntroLoading && started != 0
+                   && now - started >= kPrologueRescueDelayMs
+                   && now >= g_activityPrologueRescueNextTick.load(std::memory_order_acquire)) {
+            const GetBootflowManager getManager =
+                g_getBootflowManager.load(std::memory_order_acquire);
+            const RequestBootflowState requestState =
+                g_requestBootflowState.load(std::memory_order_acquire);
+            void* const manager = getManager == nullptr ? nullptr : getManager();
+            const std::uint32_t attempt =
+                g_activityPrologueRescueAttempts.fetch_add(1, std::memory_order_acq_rel) + 1;
+            g_activityPrologueRescueNextTick.store(now + kPrologueRescueRetryMs,
+                                                   std::memory_order_release);
+            if (manager != nullptr && requestState != nullptr) {
+                requestState(manager, kOrbitOutro, kDefaultStateChangeReason);
+                report_prologue_rescue("requested", step, attempt);
+            } else {
+                report_prologue_rescue("target_missing", step, attempt);
+            }
         }
     }
 
@@ -499,6 +644,17 @@ void poll() noexcept {
 /** Cancels a pending Director key pulse and releases the spoofed key. */
 void cancel() noexcept {
     g_activityLaunchPending.store(false, std::memory_order_release);
+    g_activityLaunchRebuildCarrier.store(false, std::memory_order_release);
+    g_activityLaunchGoalMode.store(static_cast<std::uint8_t>(ActivityGoalMode::activityTransition),
+                                   std::memory_order_release);
+    g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
+    g_activityLaunchLeftOrbit.store(false, std::memory_order_release);
+    g_activityLaunchStartedTick.store(0, std::memory_order_release);
+    g_activityPrologueRescueArmed.store(false, std::memory_order_release);
+    g_activityPrologueRescueNextTick.store(0, std::memory_order_release);
+    g_activityPrologueRescueAttempts.store(0, std::memory_order_release);
+    g_carrierOverrideArmed.store(false, std::memory_order_release);
+    g_carrierPrepared.store(false, std::memory_order_release);
     g_frames.store(0, std::memory_order_release);
     g_virtualKey.store(0, std::memory_order_release);
     g_actionKeysResolved.store(false, std::memory_order_release);
@@ -515,7 +671,6 @@ void shutdown() noexcept {
     }
     (void)hooking::detour::uninstall(g_secondarySelectionHandle);
     g_secondarySelectionHandle = {};
-    g_secondarySelectionReturn.store(nullptr, std::memory_order_release);
 }
 
 } // namespace sunrise::client::hooks::director

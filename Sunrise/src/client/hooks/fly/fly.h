@@ -21,6 +21,13 @@ void apply(void* component) noexcept;
 [[nodiscard]] bool enabled() noexcept;
 
 /**
+ * Adds Forge's vertical camera-navigation lane to the normal account bindings.
+ * @param
+ * direction -1 for down, 1 for up, or 0 to release the lane.
+ */
+void set_editor_vertical_input(int direction) noexcept;
+
+/**
  * Sets the velocity the coming simulation step integrates. Noclip reads it too.
  * @param body Character rigid body. Live only inside the step hook.
  */

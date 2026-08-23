@@ -1,0 +1,57 @@
+{
+  "bridgeVersion": "3.6",
+  "kind": "google-docs-trusted-read",
+  "status": "complete",
+  "outputDir": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery",
+  "target": {
+    "documentId": "12FgHazzSWWLR6KupHNZfZ7KjYF1thNSdwCtjBvRsb54",
+    "title": "Package File and Resource Function Index",
+    "revisionId": "AIroW35BH-sIPC6U5ZOkXoBZui8m0OyHgKrIke3oZT9qWYpcFl5V-GWnUVm-c4VBJT7ozjv-7efdyyMThvh6M7Ea9rx6ugWFHj8R1WLeIlg",
+    "documentUrl": "https://docs.google.com/document/d/12FgHazzSWWLR6KupHNZfZ7KjYF1thNSdwCtjBvRsb54",
+    "selectedTabId": "t.0"
+  },
+  "dropdownMetadata": {
+    "status": "unavailable",
+    "resolvedTool": null,
+    "authoritative": false,
+    "count": 0
+  },
+  "controlAwareness": {
+    "hasProtectedControls": false,
+    "authoritativeDropdownCount": 0,
+    "opaqueControlCount": 0,
+    "affectedParagraphCount": 0,
+    "nativeElementCounts": {},
+    "preservationRequired": false,
+    "recommendedBehavior": "No protected controls were detected in the scanned scope."
+  },
+  "warnings": [],
+  "files": {
+    "document_result": {
+      "path": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery/document-result.json",
+      "bytes": 962819,
+      "sha256": "8a0e1ed43aa8a1aac7d44e66b49d47e9edf2697ed8496c47d1069cfb1a1ea00c"
+    },
+    "control_inventory": {
+      "path": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery/control-inventory.json",
+      "bytes": 1046,
+      "sha256": "98c2161c3ca99c7560885b3b4f07da1cb17e3e03269c5f689326cbf37cb45ea2"
+    },
+    "document_outline": {
+      "path": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery/document-outline.json",
+      "bytes": 88565,
+      "sha256": "4d5000ed0b8cf38e5f71175b241149bec4a71c7dee50c53d92bc2565fe69fcad"
+    },
+    "document_text": {
+      "path": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery/document-text.md",
+      "bytes": 16109,
+      "sha256": "62d9d46c97850e8f8d0ee25476d349ed791b90b4896a2bf56b9d4775dbf906f8"
+    },
+    "receipt": {
+      "path": "/workspace/.codex/trusted-read/addendum-20260821-component-scenery/receipt.json",
+      "bytes": 977,
+      "sha256": "303b2aa70d61b54743270464f4aa344aa494304d11593bf768d997f8bcced048"
+    }
+  },
+  "error": null
+}

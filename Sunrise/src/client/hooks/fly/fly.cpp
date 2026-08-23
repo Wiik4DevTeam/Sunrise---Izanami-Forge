@@ -9,6 +9,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -76,6 +77,8 @@ std::array<bindings::Binding, kActions.size()> g_bindings{};
 bool g_bindingsRead{false};
 /** The toggle key on the previous frame, so the switch only flips on the press. */
 std::atomic_bool g_toggleDown{false};
+/** Vertical input owned by Forge while RMB camera navigation is active. */
+std::atomic_int g_editorVertical{};
 /** The height the body had before the step, which is the height to hold. */
 float g_heightBeforeStep{0.0F};
 bool g_heightValid{false};
@@ -221,6 +224,9 @@ void cap_speed(teleport::Vector& velocity, float limit) noexcept {
     std::array<bool, kDirectionCount> pressed{};
     if (!core::ui::runtime::snapshot().visible && input::game_focused()) {
         pressed = pressed_directions();
+        const int editorVertical = g_editorVertical.load(std::memory_order_acquire);
+        pressed[static_cast<std::size_t>(Direction::up)] |= editorVertical > 0;
+        pressed[static_cast<std::size_t>(Direction::down)] |= editorVertical < 0;
     }
     teleport::Vector forward{};
     const teleport::Vector move =
@@ -291,6 +297,11 @@ bool enabled() noexcept {
     return client::movement::get().flyEnabled;
 }
 
+/** Publishes Forge's optional vertical camera-navigation lane. */
+void set_editor_vertical_input(int direction) noexcept {
+    g_editorVertical.store((std::clamp)(direction, -1, 1), std::memory_order_release);
+}
+
 /** Sets the velocity the coming simulation step integrates. */
 void before_step(void* body) noexcept {
     g_heightValid = false;
@@ -324,6 +335,7 @@ void after_step(void* body, bool heldElsewhere) noexcept {
 /** Clears the key state and the held height. The switch is a stored setting and survives. */
 void reset() noexcept {
     g_toggleDown.store(false, std::memory_order_release);
+    g_editorVertical.store(0, std::memory_order_release);
     g_heightValid = false;
 }
 

@@ -1,0 +1,3183 @@
+{
+  "version": 1,
+  "kind": "google-docs-normalized-read",
+  "document": {
+    "documentId": "12FgHazzSWWLR6KupHNZfZ7KjYF1thNSdwCtjBvRsb54",
+    "title": "Package File and Resource Function Index",
+    "revisionId": "AIroW35BH-sIPC6U5ZOkXoBZui8m0OyHgKrIke3oZT9qWYpcFl5V-GWnUVm-c4VBJT7ozjv-7efdyyMThvh6M7Ea9rx6ugWFHj8R1WLeIlg",
+    "documentUrl": "https://docs.google.com/document/d/12FgHazzSWWLR6KupHNZfZ7KjYF1thNSdwCtjBvRsb54"
+  },
+  "selectedTabId": "t.0",
+  "controlSummary": {
+    "total": 0,
+    "opaque": 0,
+    "authoritativeDropdowns": 0,
+    "affectedParagraphs": 0
+  },
+  "paragraphs": [
+    {
+      "paragraphId": "P00001",
+      "path": "tabs.t.0.body.content[1]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1,
+      "endIndex": 67,
+      "namedStyleType": "TITLE",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": null,
+      "text": "Izanami Forge Addendum: Exact Package and Resource Function Index",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00002",
+      "path": "tabs.t.0.body.content[2]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 67,
+      "endIndex": 102,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": null,
+      "text": "Evidence snapshot: August 21, 2026",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00003",
+      "path": "tabs.t.0.body.content[3]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 102,
+      "endIndex": 103,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": null,
+      "text": "",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00004",
+      "path": "tabs.t.0.body.content[4].table.rows[0].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 106,
+      "endIndex": 130,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 0,
+        "columnIndex": 0
+      },
+      "text": "Exact file / identifier",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00005",
+      "path": "tabs.t.0.body.content[4].table.rows[0].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 131,
+      "endIndex": 136,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 0,
+        "columnIndex": 1
+      },
+      "text": "Kind",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00006",
+      "path": "tabs.t.0.body.content[4].table.rows[0].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 137,
+      "endIndex": 157,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 0,
+        "columnIndex": 2
+      },
+      "text": "Confirmed data type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00007",
+      "path": "tabs.t.0.body.content[4].table.rows[0].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 158,
+      "endIndex": 197,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 0,
+        "columnIndex": 3
+      },
+      "text": "Confirmed function / observed behavior",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00008",
+      "path": "tabs.t.0.body.content[4].table.rows[0].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 198,
+      "endIndex": 208,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 0,
+        "columnIndex": 4
+      },
+      "text": "Certainty",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00009",
+      "path": "tabs.t.0.body.content[4].table.rows[1].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 210,
+      "endIndex": 239,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 1,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_2.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00010",
+      "path": "tabs.t.0.body.content[4].table.rows[1].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 240,
+      "endIndex": 262,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 1,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00011",
+      "path": "tabs.t.0.body.content[4].table.rows[1].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 263,
+      "endIndex": 297,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 1,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 2",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00012",
+      "path": "tabs.t.0.body.content[4].table.rows[1].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 298,
+      "endIndex": 394,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 1,
+        "columnIndex": 3
+      },
+      "text": "Active owner/storage file carrying blocks modified by the 210-actor standalone scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00013",
+      "path": "tabs.t.0.body.content[4].table.rows[1].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 395,
+      "endIndex": 454,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 1,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED participation; exact per-block labels unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00014",
+      "path": "tabs.t.0.body.content[4].table.rows[2].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 456,
+      "endIndex": 485,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 2,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_3.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00015",
+      "path": "tabs.t.0.body.content[4].table.rows[2].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 486,
+      "endIndex": 508,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 2,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00016",
+      "path": "tabs.t.0.body.content[4].table.rows[2].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 509,
+      "endIndex": 543,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 2,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 3",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00017",
+      "path": "tabs.t.0.body.content[4].table.rows[2].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 544,
+      "endIndex": 640,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 2,
+        "columnIndex": 3
+      },
+      "text": "Active owner/storage file carrying blocks modified by the 210-actor standalone scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00018",
+      "path": "tabs.t.0.body.content[4].table.rows[2].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 641,
+      "endIndex": 700,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 2,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED participation; exact per-block labels unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00019",
+      "path": "tabs.t.0.body.content[4].table.rows[3].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 702,
+      "endIndex": 731,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 3,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_4.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00020",
+      "path": "tabs.t.0.body.content[4].table.rows[3].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 732,
+      "endIndex": 754,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 3,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00021",
+      "path": "tabs.t.0.body.content[4].table.rows[3].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 755,
+      "endIndex": 789,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 3,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 4",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00022",
+      "path": "tabs.t.0.body.content[4].table.rows[3].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 790,
+      "endIndex": 886,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 3,
+        "columnIndex": 3
+      },
+      "text": "Active owner/storage file carrying blocks modified by the 210-actor standalone scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00023",
+      "path": "tabs.t.0.body.content[4].table.rows[3].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 887,
+      "endIndex": 946,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 3,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED participation; exact per-block labels unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00024",
+      "path": "tabs.t.0.body.content[4].table.rows[4].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 948,
+      "endIndex": 977,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 4,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_5.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00025",
+      "path": "tabs.t.0.body.content[4].table.rows[4].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 978,
+      "endIndex": 1000,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 4,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00026",
+      "path": "tabs.t.0.body.content[4].table.rows[4].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1001,
+      "endIndex": 1035,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 4,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 5",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00027",
+      "path": "tabs.t.0.body.content[4].table.rows[4].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1036,
+      "endIndex": 1132,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 4,
+        "columnIndex": 3
+      },
+      "text": "Active owner/storage file carrying blocks modified by the 210-actor standalone scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00028",
+      "path": "tabs.t.0.body.content[4].table.rows[4].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1133,
+      "endIndex": 1192,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 4,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED participation; exact per-block labels unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00029",
+      "path": "tabs.t.0.body.content[4].table.rows[5].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1194,
+      "endIndex": 1223,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 5,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_6.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00030",
+      "path": "tabs.t.0.body.content[4].table.rows[5].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1224,
+      "endIndex": 1246,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 5,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00031",
+      "path": "tabs.t.0.body.content[4].table.rows[5].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1247,
+      "endIndex": 1281,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 5,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 6",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00032",
+      "path": "tabs.t.0.body.content[4].table.rows[5].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1282,
+      "endIndex": 1362,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 5,
+        "columnIndex": 3
+      },
+      "text": "Active Tower chain member; unchanged by the current standalone scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00033",
+      "path": "tabs.t.0.body.content[4].table.rows[5].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1363,
+      "endIndex": 1427,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 5,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain membership; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00034",
+      "path": "tabs.t.0.body.content[4].table.rows[6].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1429,
+      "endIndex": 1458,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 6,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_7.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00035",
+      "path": "tabs.t.0.body.content[4].table.rows[6].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1459,
+      "endIndex": 1481,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 6,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00036",
+      "path": "tabs.t.0.body.content[4].table.rows[6].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1482,
+      "endIndex": 1516,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 6,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 7",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00037",
+      "path": "tabs.t.0.body.content[4].table.rows[6].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1517,
+      "endIndex": 1650,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 6,
+        "columnIndex": 3
+      },
+      "text": "Active Tower chain member; unchanged by the current standalone scenery control; previously used in carrier/registration experiments.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00038",
+      "path": "tabs.t.0.body.content[4].table.rows[6].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1651,
+      "endIndex": 1695,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 6,
+        "columnIndex": 4
+      },
+      "text": "HIGH; exact current payload role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00039",
+      "path": "tabs.t.0.body.content[4].table.rows[7].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1697,
+      "endIndex": 1726,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 7,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_0369_8.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00040",
+      "path": "tabs.t.0.body.content[4].table.rows[7].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1727,
+      "endIndex": 1749,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 7,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00041",
+      "path": "tabs.t.0.body.content[4].table.rows[7].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1750,
+      "endIndex": 1784,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 7,
+        "columnIndex": 2
+      },
+      "text": "Tower map package 0x0369, patch 8",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00042",
+      "path": "tabs.t.0.body.content[4].table.rows[7].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1785,
+      "endIndex": 1892,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 7,
+        "columnIndex": 3
+      },
+      "text": "Active generated patch that registers the current modified block set for the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00043",
+      "path": "tabs.t.0.body.content[4].table.rows[7].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1893,
+      "endIndex": 1953,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 7,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED by stage telemetry, hash match, and in-world load",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00044",
+      "path": "tabs.t.0.body.content[4].table.rows[8].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1955,
+      "endIndex": 1995,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 8,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_0.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00045",
+      "path": "tabs.t.0.body.content[4].table.rows[8].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 1996,
+      "endIndex": 2018,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 8,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00046",
+      "path": "tabs.t.0.body.content[4].table.rows[8].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2019,
+      "endIndex": 2063,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 8,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, base/patch 0",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00047",
+      "path": "tabs.t.0.body.content[4].table.rows[8].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2064,
+      "endIndex": 2164,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 8,
+        "columnIndex": 3
+      },
+      "text": "Active activity owner/base file. Current file is restored; rejected direct-Havok patch 6 is absent.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00048",
+      "path": "tabs.t.0.body.content[4].table.rows[8].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2165,
+      "endIndex": 2240,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 8,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED family and rollback state; per-tag physical ownership unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00049",
+      "path": "tabs.t.0.body.content[4].table.rows[9].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2242,
+      "endIndex": 2282,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 9,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_1.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00050",
+      "path": "tabs.t.0.body.content[4].table.rows[9].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2283,
+      "endIndex": 2305,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 9,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00051",
+      "path": "tabs.t.0.body.content[4].table.rows[9].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2306,
+      "endIndex": 2345,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 9,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, patch 1",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00052",
+      "path": "tabs.t.0.body.content[4].table.rows[9].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2346,
+      "endIndex": 2424,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 9,
+        "columnIndex": 3
+      },
+      "text": "Active activity patch-chain member; unchanged by the current scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00053",
+      "path": "tabs.t.0.body.content[4].table.rows[9].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2425,
+      "endIndex": 2489,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 9,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain membership; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00054",
+      "path": "tabs.t.0.body.content[4].table.rows[10].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2491,
+      "endIndex": 2531,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 10,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_2.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00055",
+      "path": "tabs.t.0.body.content[4].table.rows[10].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2532,
+      "endIndex": 2554,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 10,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00056",
+      "path": "tabs.t.0.body.content[4].table.rows[10].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2555,
+      "endIndex": 2594,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 10,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, patch 2",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00057",
+      "path": "tabs.t.0.body.content[4].table.rows[10].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2595,
+      "endIndex": 2673,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 10,
+        "columnIndex": 3
+      },
+      "text": "Active activity patch-chain member; unchanged by the current scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00058",
+      "path": "tabs.t.0.body.content[4].table.rows[10].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2674,
+      "endIndex": 2738,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 10,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain membership; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00059",
+      "path": "tabs.t.0.body.content[4].table.rows[11].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2740,
+      "endIndex": 2780,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 11,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_3.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00060",
+      "path": "tabs.t.0.body.content[4].table.rows[11].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2781,
+      "endIndex": 2803,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 11,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00061",
+      "path": "tabs.t.0.body.content[4].table.rows[11].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2804,
+      "endIndex": 2843,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 11,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, patch 3",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00062",
+      "path": "tabs.t.0.body.content[4].table.rows[11].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2844,
+      "endIndex": 2922,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 11,
+        "columnIndex": 3
+      },
+      "text": "Active activity patch-chain member; unchanged by the current scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00063",
+      "path": "tabs.t.0.body.content[4].table.rows[11].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2923,
+      "endIndex": 2987,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 11,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain membership; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00064",
+      "path": "tabs.t.0.body.content[4].table.rows[12].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 2989,
+      "endIndex": 3029,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 12,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_4.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00065",
+      "path": "tabs.t.0.body.content[4].table.rows[12].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3030,
+      "endIndex": 3052,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 12,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00066",
+      "path": "tabs.t.0.body.content[4].table.rows[12].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3053,
+      "endIndex": 3092,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 12,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, patch 4",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00067",
+      "path": "tabs.t.0.body.content[4].table.rows[12].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3093,
+      "endIndex": 3171,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 12,
+        "columnIndex": 3
+      },
+      "text": "Active activity patch-chain member; unchanged by the current scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00068",
+      "path": "tabs.t.0.body.content[4].table.rows[12].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3172,
+      "endIndex": 3236,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 12,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain membership; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00069",
+      "path": "tabs.t.0.body.content[4].table.rows[13].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3238,
+      "endIndex": 3278,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 13,
+        "columnIndex": 0
+      },
+      "text": "w64_city_tower_d2_activities_0212_5.pkg",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00070",
+      "path": "tabs.t.0.body.content[4].table.rows[13].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3279,
+      "endIndex": 3301,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 13,
+        "columnIndex": 1
+      },
+      "text": "Physical package file",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00071",
+      "path": "tabs.t.0.body.content[4].table.rows[13].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3302,
+      "endIndex": 3341,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 13,
+        "columnIndex": 2
+      },
+      "text": "Tower activity package 0x0212, patch 5",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00072",
+      "path": "tabs.t.0.body.content[4].table.rows[13].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3342,
+      "endIndex": 3427,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 13,
+        "columnIndex": 3
+      },
+      "text": "Latest active activity patch-chain member; rejected generated patch 6 is not active.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00073",
+      "path": "tabs.t.0.body.content[4].table.rows[13].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3428,
+      "endIndex": 3505,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 13,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED chain and active-latest state; individual semantic role unresolved",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00074",
+      "path": "tabs.t.0.body.content[4].table.rows[14].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3507,
+      "endIndex": 3518,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 14,
+        "columnIndex": 0
+      },
+      "text": "0x808099D6",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00075",
+      "path": "tabs.t.0.body.content[4].table.rows[14].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3519,
+      "endIndex": 3537,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 14,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00076",
+      "path": "tabs.t.0.body.content[4].table.rows[14].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3538,
+      "endIndex": 3551,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 14,
+        "columnIndex": 2
+      },
+      "text": "MapDataTable",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00077",
+      "path": "tabs.t.0.body.content[4].table.rows[14].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3552,
+      "endIndex": 3676,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 14,
+        "columnIndex": 3
+      },
+      "text": "Contains fixed-stride map placement rows: entity owner at +0x00, transform fields, and optional component pointer at +0x78.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00078",
+      "path": "tabs.t.0.body.content[4].table.rows[14].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3677,
+      "endIndex": 3735,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 14,
+        "columnIndex": 4
+      },
+      "text": "HIGH: source-derived and verified across 1,563 Tower rows",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00079",
+      "path": "tabs.t.0.body.content[4].table.rows[15].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3737,
+      "endIndex": 3748,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 15,
+        "columnIndex": 0
+      },
+      "text": "0x80809C0F",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00080",
+      "path": "tabs.t.0.body.content[4].table.rows[15].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3749,
+      "endIndex": 3767,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 15,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00081",
+      "path": "tabs.t.0.body.content[4].table.rows[15].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3768,
+      "endIndex": 3785,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 15,
+        "columnIndex": 2
+      },
+      "text": "EntityDefinition",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00082",
+      "path": "tabs.t.0.body.content[4].table.rows[15].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3786,
+      "endIndex": 3849,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 15,
+        "columnIndex": 3
+      },
+      "text": "Defines a placed entity; object-type byte is decoded at +0x96.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00083",
+      "path": "tabs.t.0.body.content[4].table.rows[15].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3850,
+      "endIndex": 3892,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 15,
+        "columnIndex": 4
+      },
+      "text": "HIGH: source-derived and offline-verified",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00084",
+      "path": "tabs.t.0.body.content[4].table.rows[16].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3894,
+      "endIndex": 3905,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 16,
+        "columnIndex": 0
+      },
+      "text": "0x808071B3",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00085",
+      "path": "tabs.t.0.body.content[4].table.rows[16].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3906,
+      "endIndex": 3924,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 16,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00086",
+      "path": "tabs.t.0.body.content[4].table.rows[16].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3925,
+      "endIndex": 3935,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 16,
+        "columnIndex": 2
+      },
+      "text": "StaticMap",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00087",
+      "path": "tabs.t.0.body.content[4].table.rows[16].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 3936,
+      "endIndex": 4035,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 16,
+        "columnIndex": 3
+      },
+      "text": "Aggregate static-map layer placement. Thirteen Tower rows are present in the validated base graph.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00088",
+      "path": "tabs.t.0.body.content[4].table.rows[16].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4036,
+      "endIndex": 4088,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 16,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED class/count; individual layer labels vary",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00089",
+      "path": "tabs.t.0.body.content[4].table.rows[17].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4090,
+      "endIndex": 4101,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 17,
+        "columnIndex": 0
+      },
+      "text": "0x80807246",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00090",
+      "path": "tabs.t.0.body.content[4].table.rows[17].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4102,
+      "endIndex": 4120,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 17,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00091",
+      "path": "tabs.t.0.body.content[4].table.rows[17].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4121,
+      "endIndex": 4152,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 17,
+        "columnIndex": 2
+      },
+      "text": "VisibilityBundle_OptionalHavok",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00092",
+      "path": "tabs.t.0.body.content[4].table.rows[17].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4153,
+      "endIndex": 4258,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 17,
+        "columnIndex": 3
+      },
+      "text": "Six Tower visibility/world-bundle wrappers. Suppression produced no observed visual or collision change.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00093",
+      "path": "tabs.t.0.body.content[4].table.rows[17].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4259,
+      "endIndex": 4292,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 17,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED negative field control",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00094",
+      "path": "tabs.t.0.body.content[4].table.rows[18].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4294,
+      "endIndex": 4305,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 18,
+        "columnIndex": 0
+      },
+      "text": "0x8080929B",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00095",
+      "path": "tabs.t.0.body.content[4].table.rows[18].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4306,
+      "endIndex": 4324,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 18,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00096",
+      "path": "tabs.t.0.body.content[4].table.rows[18].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4325,
+      "endIndex": 4346,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 18,
+        "columnIndex": 2
+      },
+      "text": "DirectHavokPlacement",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00097",
+      "path": "tabs.t.0.body.content[4].table.rows[18].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4347,
+      "endIndex": 4428,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 18,
+        "columnIndex": 3
+      },
+      "text": "Direct Havok placement wrapper: 14 Tower-base rows and 16 activity-package rows.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00098",
+      "path": "tabs.t.0.body.content[4].table.rows[18].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4429,
+      "endIndex": 4479,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 18,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED class/count and negative field controls",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00099",
+      "path": "tabs.t.0.body.content[4].table.rows[19].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4481,
+      "endIndex": 4492,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 19,
+        "columnIndex": 0
+      },
+      "text": "0x80806DE0",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00100",
+      "path": "tabs.t.0.body.content[4].table.rows[19].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4493,
+      "endIndex": 4511,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 19,
+        "columnIndex": 1
+      },
+      "text": "Resource class ID",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00101",
+      "path": "tabs.t.0.body.content[4].table.rows[19].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4512,
+      "endIndex": 4533,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 19,
+        "columnIndex": 2
+      },
+      "text": "EntityModelPlacement",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00102",
+      "path": "tabs.t.0.body.content[4].table.rows[19].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4534,
+      "endIndex": 4668,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 19,
+        "columnIndex": 3
+      },
+      "text": "Sixteen Tower model placements; 15 carry a model-linked Havok reference. Outer-scale suppression changed none of the reported issues.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00103",
+      "path": "tabs.t.0.body.content[4].table.rows[19].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4669,
+      "endIndex": 4718,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 19,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED class/count and negative field control",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00104",
+      "path": "tabs.t.0.body.content[4].table.rows[20].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4720,
+      "endIndex": 4731,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 20,
+        "columnIndex": 0
+      },
+      "text": "0x80ED22FB",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00105",
+      "path": "tabs.t.0.body.content[4].table.rows[20].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4732,
+      "endIndex": 4754,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 20,
+        "columnIndex": 1
+      },
+      "text": "Exact Tower table tag",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00106",
+      "path": "tabs.t.0.body.content[4].table.rows[20].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4755,
+      "endIndex": 4771,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 20,
+        "columnIndex": 2
+      },
+      "text": "StaticMap table",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00107",
+      "path": "tabs.t.0.body.content[4].table.rows[20].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4772,
+      "endIndex": 4881,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 20,
+        "columnIndex": 3
+      },
+      "text": "Tower-local floor/stair visual candidate moved to the arrival area. It renders but has no matched collision.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00108",
+      "path": "tabs.t.0.body.content[4].table.rows[20].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4882,
+      "endIndex": 4898,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 20,
+        "columnIndex": 4
+      },
+      "text": "FIELD-CONFIRMED",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00109",
+      "path": "tabs.t.0.body.content[4].table.rows[21].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4900,
+      "endIndex": 4911,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 21,
+        "columnIndex": 0
+      },
+      "text": "0x80ED2B6F",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00110",
+      "path": "tabs.t.0.body.content[4].table.rows[21].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4912,
+      "endIndex": 4934,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 21,
+        "columnIndex": 1
+      },
+      "text": "Exact Tower table tag",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00111",
+      "path": "tabs.t.0.body.content[4].table.rows[21].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4935,
+      "endIndex": 4951,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 21,
+        "columnIndex": 2
+      },
+      "text": "StaticMap table",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00112",
+      "path": "tabs.t.0.body.content[4].table.rows[21].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 4952,
+      "endIndex": 5043,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 21,
+        "columnIndex": 3
+      },
+      "text": "Tower ambient skybox layer. Transform/scale changes visibly moved and enlarged the skybox.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00113",
+      "path": "tabs.t.0.body.content[4].table.rows[21].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5044,
+      "endIndex": 5060,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 21,
+        "columnIndex": 4
+      },
+      "text": "FIELD-CONFIRMED",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00114",
+      "path": "tabs.t.0.body.content[4].table.rows[22].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5062,
+      "endIndex": 5073,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 22,
+        "columnIndex": 0
+      },
+      "text": "0x80C24CED",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00115",
+      "path": "tabs.t.0.body.content[4].table.rows[22].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5074,
+      "endIndex": 5099,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 22,
+        "columnIndex": 1
+      },
+      "text": "Exact activity table tag",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00116",
+      "path": "tabs.t.0.body.content[4].table.rows[22].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5100,
+      "endIndex": 5127,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 22,
+        "columnIndex": 2
+      },
+      "text": "DirectHavokPlacement table",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00117",
+      "path": "tabs.t.0.body.content[4].table.rows[22].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5128,
+      "endIndex": 5233,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 22,
+        "columnIndex": 3
+      },
+      "text": "Contains exactly 2 activity direct-Havok rows; isolated suppression changed none of the reported issues.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00118",
+      "path": "tabs.t.0.body.content[4].table.rows[22].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5234,
+      "endIndex": 5277,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 22,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count and negative field control",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00119",
+      "path": "tabs.t.0.body.content[4].table.rows[23].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5279,
+      "endIndex": 5290,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 23,
+        "columnIndex": 0
+      },
+      "text": "0x80C250E3",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00120",
+      "path": "tabs.t.0.body.content[4].table.rows[23].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5291,
+      "endIndex": 5316,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 23,
+        "columnIndex": 1
+      },
+      "text": "Exact activity table tag",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00121",
+      "path": "tabs.t.0.body.content[4].table.rows[23].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5317,
+      "endIndex": 5344,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 23,
+        "columnIndex": 2
+      },
+      "text": "DirectHavokPlacement table",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00122",
+      "path": "tabs.t.0.body.content[4].table.rows[23].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5345,
+      "endIndex": 5451,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 23,
+        "columnIndex": 3
+      },
+      "text": "Contains exactly 14 activity direct-Havok rows; isolated suppression changed none of the reported issues.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00123",
+      "path": "tabs.t.0.body.content[4].table.rows[23].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5452,
+      "endIndex": 5495,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 23,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count and negative field control",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00124",
+      "path": "tabs.t.0.body.content[4].table.rows[24].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5497,
+      "endIndex": 5517,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 24,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 1",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00125",
+      "path": "tabs.t.0.body.content[4].table.rows[24].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5518,
+      "endIndex": 5537,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 24,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00126",
+      "path": "tabs.t.0.body.content[4].table.rows[24].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5538,
+      "endIndex": 5549,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 24,
+        "columnIndex": 2
+      },
+      "text": "StaticMesh",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00127",
+      "path": "tabs.t.0.body.content[4].table.rows[24].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5550,
+      "endIndex": 5626,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 24,
+        "columnIndex": 3
+      },
+      "text": "102 standalone Tower actors suppressed by the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00128",
+      "path": "tabs.t.0.body.content[4].table.rows[24].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5627,
+      "endIndex": 5689,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 24,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; field result removed part of visible scenery",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00129",
+      "path": "tabs.t.0.body.content[4].table.rows[25].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5691,
+      "endIndex": 5711,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 25,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 2",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00130",
+      "path": "tabs.t.0.body.content[4].table.rows[25].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5712,
+      "endIndex": 5731,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 25,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00131",
+      "path": "tabs.t.0.body.content[4].table.rows[25].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5732,
+      "endIndex": 5753,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 25,
+        "columnIndex": 2
+      },
+      "text": "PropSimpleDeprecated",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00132",
+      "path": "tabs.t.0.body.content[4].table.rows[25].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5754,
+      "endIndex": 5829,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 25,
+        "columnIndex": 3
+      },
+      "text": "29 standalone Tower actors suppressed by the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00133",
+      "path": "tabs.t.0.body.content[4].table.rows[25].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5830,
+      "endIndex": 5890,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 25,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; aggregate visual contribution not isolated",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00134",
+      "path": "tabs.t.0.body.content[4].table.rows[26].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5892,
+      "endIndex": 5912,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 26,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 5",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00135",
+      "path": "tabs.t.0.body.content[4].table.rows[26].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5913,
+      "endIndex": 5932,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 26,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00136",
+      "path": "tabs.t.0.body.content[4].table.rows[26].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5933,
+      "endIndex": 5953,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 26,
+        "columnIndex": 2
+      },
+      "text": "PropCosmeticMovable",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00137",
+      "path": "tabs.t.0.body.content[4].table.rows[26].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 5954,
+      "endIndex": 6029,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 26,
+        "columnIndex": 3
+      },
+      "text": "22 standalone Tower actors suppressed by the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00138",
+      "path": "tabs.t.0.body.content[4].table.rows[26].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6030,
+      "endIndex": 6092,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 26,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; likely contributor to removed animated props",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00139",
+      "path": "tabs.t.0.body.content[4].table.rows[27].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6094,
+      "endIndex": 6114,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 27,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 9",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00140",
+      "path": "tabs.t.0.body.content[4].table.rows[27].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6115,
+      "endIndex": 6134,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 27,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00141",
+      "path": "tabs.t.0.body.content[4].table.rows[27].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6135,
+      "endIndex": 6149,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 27,
+        "columnIndex": 2
+      },
+      "text": "PropCinematic",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00142",
+      "path": "tabs.t.0.body.content[4].table.rows[27].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6150,
+      "endIndex": 6224,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 27,
+        "columnIndex": 3
+      },
+      "text": "4 standalone Tower actors suppressed by the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00143",
+      "path": "tabs.t.0.body.content[4].table.rows[27].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6225,
+      "endIndex": 6285,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 27,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; aggregate visual contribution not isolated",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00144",
+      "path": "tabs.t.0.body.content[4].table.rows[28].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6287,
+      "endIndex": 6308,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 28,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 17",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00145",
+      "path": "tabs.t.0.body.content[4].table.rows[28].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6309,
+      "endIndex": 6328,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 28,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00146",
+      "path": "tabs.t.0.body.content[4].table.rows[28].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6329,
+      "endIndex": 6337,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 28,
+        "columnIndex": 2
+      },
+      "text": "Emitter",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00147",
+      "path": "tabs.t.0.body.content[4].table.rows[28].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6338,
+      "endIndex": 6413,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 28,
+        "columnIndex": 3
+      },
+      "text": "53 standalone Tower actors suppressed by the field-tested scenery control.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00148",
+      "path": "tabs.t.0.body.content[4].table.rows[28].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6414,
+      "endIndex": 6500,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 28,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; some effects remained because component-backed visuals were retained",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00149",
+      "path": "tabs.t.0.body.content[4].table.rows[29].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6502,
+      "endIndex": 6523,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 29,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 11",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00150",
+      "path": "tabs.t.0.body.content[4].table.rows[29].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6524,
+      "endIndex": 6543,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 29,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00151",
+      "path": "tabs.t.0.body.content[4].table.rows[29].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6544,
+      "endIndex": 6556,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 29,
+        "columnIndex": 2
+      },
+      "text": "Interactive",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00152",
+      "path": "tabs.t.0.body.content[4].table.rows[29].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6557,
+      "endIndex": 6637,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 29,
+        "columnIndex": 3
+      },
+      "text": "9 standalone Tower actors deliberately preserved as launch-critical candidates.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00153",
+      "path": "tabs.t.0.body.content[4].table.rows[29].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6638,
+      "endIndex": 6706,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 29,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; exact gameplay necessity not individually isolated",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00154",
+      "path": "tabs.t.0.body.content[4].table.rows[30].cells[0].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6708,
+      "endIndex": 6729,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 30,
+        "columnIndex": 0
+      },
+      "text": "Entity ObjectType 28",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00155",
+      "path": "tabs.t.0.body.content[4].table.rows[30].cells[1].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6730,
+      "endIndex": 6749,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 30,
+        "columnIndex": 1
+      },
+      "text": "Entity object type",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00156",
+      "path": "tabs.t.0.body.content[4].table.rows[30].cells[2].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6750,
+      "endIndex": 6757,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 30,
+        "columnIndex": 2
+      },
+      "text": "System",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00157",
+      "path": "tabs.t.0.body.content[4].table.rows[30].cells[3].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6758,
+      "endIndex": 6838,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 30,
+        "columnIndex": 3
+      },
+      "text": "8 standalone Tower actors deliberately preserved as launch-critical candidates.",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00158",
+      "path": "tabs.t.0.body.content[4].table.rows[30].cells[4].content[0]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6839,
+      "endIndex": 6907,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": {
+        "tableStartIndex": 103,
+        "rowIndex": 30,
+        "columnIndex": 4
+      },
+      "text": "CONFIRMED count; exact gameplay necessity not individually isolated",
+      "protectedControls": []
+    },
+    {
+      "paragraphId": "P00159",
+      "path": "tabs.t.0.body.content[5]",
+      "tabId": "t.0",
+      "tabTitle": "Tab 1",
+      "segmentId": null,
+      "startIndex": 6908,
+      "endIndex": 6909,
+      "namedStyleType": "NORMAL_TEXT",
+      "isListItem": false,
+      "listId": null,
+      "nestingLevel": null,
+      "table": null,
+      "text": "",
+      "protectedControls": []
+    }
+  ]
+}

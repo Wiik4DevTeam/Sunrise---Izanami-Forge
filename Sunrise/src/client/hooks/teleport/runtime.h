@@ -130,6 +130,13 @@ void apply_pending(void* component) noexcept;
 [[nodiscard]] bool move_local_player(const Vector& position) noexcept;
 
 /**
+ * Queues an absolute player move for the next game-owned camera or physics tick.
+ * @return
+ * True when a live local-player component exists and the request was queued.
+ */
+[[nodiscard]] bool request_local_player_move(const Vector& position) noexcept;
+
+/**
  * Reads the linear velocity of the body a physics component drives.
  * @param component Physics component.
  * @param velocity Receives the three lanes.

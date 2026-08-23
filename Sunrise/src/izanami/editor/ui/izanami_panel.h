@@ -13,6 +13,9 @@ void draw() noexcept;
 /** @return True while the standalone Forge overlay should capture input. */
 [[nodiscard]] bool standalone_visible() noexcept;
 
+/** @return True while the live viewport temporarily owns camera mouse input. */
+[[nodiscard]] bool standalone_camera_control_active() noexcept;
+
 /** Sets standalone overlay visibility directly. */
 [[nodiscard]] bool set_standalone_visible(bool visible) noexcept;
 

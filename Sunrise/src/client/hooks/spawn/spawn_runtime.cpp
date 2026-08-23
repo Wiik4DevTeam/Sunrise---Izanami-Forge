@@ -74,6 +74,7 @@ constexpr std::size_t kObjectDatumBaseOffset = 0x08;
 constexpr std::size_t kObjectDatumStrideOffset = 0x10;
 constexpr std::size_t kObjectDatumBytes = 0xE0;
 constexpr std::size_t kObjectHandleOffset = 0x0C;
+constexpr std::size_t kObjectDatumCapacity = 1U << 13U;
 constexpr std::size_t kActivationCapacity = 64;
 constexpr std::uint8_t kActivationAttempts = 4;
 constexpr std::uint64_t kRequestTimeoutMs = 3000;
@@ -101,6 +102,7 @@ struct alignas(16) PlacementStorage {
 struct Request {
     std::vector<std::uint32_t> tags{};
     Settings settings{};
+    std::array<float, 3> absolutePosition{};
     Origin origin{Origin::player};
     std::uint32_t amount{};
     std::uint32_t itemsPerRow{1};
@@ -122,6 +124,11 @@ struct Shortcut {
     std::uint32_t amount{};
 };
 
+struct ResolvedWorldDefinition {
+    WorldObjectDefinition definition{};
+    const std::byte* address{};
+};
+
 hooking::detour::Handle g_updateHook{};
 std::atomic_bool g_installed{};
 PlacementInitialize g_initialize{};
@@ -140,6 +147,79 @@ std::size_t g_activationCount{};
 SRWLOCK g_shortcutLock{SRWLOCK_INIT};
 std::array<Shortcut, client::spawn::kActionCount> g_shortcuts{};
 std::array<std::atomic_bool, client::spawn::kActionCount> g_shortcutDown{};
+std::atomic_uint64_t g_spawnSequence{};
+std::atomic_uint32_t g_lastSpawnTag{};
+std::atomic_uint32_t g_lastSpawnHandle{kInvalidDatum};
+std::atomic_uint8_t g_lastSpawnType{};
+std::atomic_uint8_t g_lastSpawnOutcome{};
+std::array<std::atomic<float>, 3> g_lastSpawnPosition{};
+std::array<std::atomic<float>, 4> g_lastSpawnRotation{};
+std::atomic<float> g_lastSpawnScale{1.0F};
+std::atomic_bool g_lastSpawnSucceeded{};
+
+[[nodiscard]] std::string_view outcome_label(SpawnOutcome outcome) noexcept {
+    switch (outcome) {
+    case SpawnOutcome::none:
+        return "none";
+    case SpawnOutcome::created:
+        return "created";
+    case SpawnOutcome::cameraUnavailable:
+        return "camera_unavailable";
+    case SpawnOutcome::playerUnavailable:
+        return "player_unavailable";
+    case SpawnOutcome::surfaceMiss:
+        return "surface_miss";
+    case SpawnOutcome::factoryRejected:
+        return "factory_rejected";
+    }
+    return "unknown";
+}
+
+void publish_spawn_observation(std::uint32_t tag,
+                               std::uint32_t handle,
+                               SpawnOutcome outcome,
+                               std::string_view stage,
+                               const std::array<float, 3>* position = nullptr,
+                               const std::array<float, 4>* rotation = nullptr,
+                               float scale = 1.0F) noexcept {
+    std::uint8_t type = 0;
+    (void)object_type(tag, type);
+    const bool succeeded = outcome == SpawnOutcome::created && handle != kInvalidDatum;
+    g_lastSpawnTag.store(tag, std::memory_order_relaxed);
+    g_lastSpawnHandle.store(handle, std::memory_order_relaxed);
+    g_lastSpawnType.store(type, std::memory_order_relaxed);
+    g_lastSpawnOutcome.store(static_cast<std::uint8_t>(outcome), std::memory_order_relaxed);
+    for (std::size_t index = 0; index < g_lastSpawnPosition.size(); ++index) {
+        g_lastSpawnPosition[index].store(position == nullptr ? 0.0F : (*position)[index],
+                                         std::memory_order_relaxed);
+    }
+    constexpr std::array<float, 4> identity{0.0F, 0.0F, 0.0F, 1.0F};
+    for (std::size_t index = 0; index < g_lastSpawnRotation.size(); ++index) {
+        g_lastSpawnRotation[index].store(rotation == nullptr ? identity[index] : (*rotation)[index],
+                                         std::memory_order_relaxed);
+    }
+    g_lastSpawnScale.store(scale, std::memory_order_relaxed);
+    g_lastSpawnSucceeded.store(succeeded, std::memory_order_relaxed);
+    (void)g_spawnSequence.fetch_add(1, std::memory_order_release);
+
+    std::array<char, 192> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "ev=spawn stage=%.*s result=%s outcome=%.*s tag=0x%08X "
+                                      "handle=0x%08X",
+                                      static_cast<int>(stage.size()),
+                                      stage.data(),
+                                      succeeded ? "ok" : "fail",
+                                      static_cast<int>(outcome_label(outcome).size()),
+                                      outcome_label(outcome).data(),
+                                      static_cast<unsigned>(tag),
+                                      static_cast<unsigned>(handle));
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         succeeded ? core::log::Level::info : core::log::Level::warn,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
 
 template <typename T> [[nodiscard]] bool safe_read(const void* source, T& value) noexcept {
     __try {
@@ -148,6 +228,17 @@ template <typename T> [[nodiscard]] bool safe_read(const void* source, T& value)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         value = {};
         return false;
+    }
+}
+
+[[nodiscard]] const std::byte* safe_resolve_definition(std::uint32_t tag) noexcept {
+    if (g_resolver == nullptr) {
+        return nullptr;
+    }
+    __try {
+        return g_resolver(tag);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
     }
 }
 
@@ -187,6 +278,40 @@ void reset_storage(PlacementStorage& storage) noexcept {
     std::byte* const object = base + (handle & 0x1FFFU) * stride;
     std::uint32_t live = kInvalidDatum;
     return safe_read(object + kObjectHandleOffset, live) && live == handle ? object : nullptr;
+}
+
+[[nodiscard]] const ResolvedWorldDefinition*
+find_world_definition_by_tag(std::span<const ResolvedWorldDefinition> definitions,
+                             std::uint32_t tag) noexcept {
+    const auto found = std::lower_bound(
+        definitions.begin(), definitions.end(), tag, [](const auto& candidate, auto value) {
+            return candidate.definition.tag < value;
+        });
+    return found != definitions.end() && found->definition.tag == tag ? &*found : nullptr;
+}
+
+[[nodiscard]] const ResolvedWorldDefinition*
+find_world_definition_by_address(std::span<const ResolvedWorldDefinition* const> definitions,
+                                 const std::byte* address) noexcept {
+    const auto found = std::lower_bound(
+        definitions.begin(), definitions.end(), address, [](const auto* candidate, auto* value) {
+            return reinterpret_cast<std::uintptr_t>(candidate->address)
+                   < reinterpret_cast<std::uintptr_t>(value);
+        });
+    return found != definitions.end() && (*found)->address == address ? *found : nullptr;
+}
+
+void consider_world_definition(const ResolvedWorldDefinition* candidate,
+                               const ResolvedWorldDefinition*& selected,
+                               bool& ambiguous) noexcept {
+    if (candidate == nullptr || ambiguous) {
+        return;
+    }
+    if (selected == nullptr) {
+        selected = candidate;
+    } else if (selected->definition.tag != candidate->definition.tag) {
+        ambiguous = true;
+    }
 }
 
 [[nodiscard]] bool needs_activation(std::uint32_t tag) noexcept {
@@ -277,7 +402,11 @@ void service_activations() noexcept {
 [[nodiscard]] bool crosshair_hit(float distance,
                                  const std::array<float, 3>& camera,
                                  const std::array<float, 3>& forward,
-                                 std::array<float, 3>& output) noexcept {
+                                 std::array<float, 3>& output,
+                                 float* hitFraction = nullptr,
+                                 std::int32_t* hitMaterial = nullptr,
+                                 bool* nativeResult = nullptr,
+                                 bool* outputChanged = nullptr) noexcept {
     if (g_raycast == nullptr || !std::isfinite(distance) || distance <= 0.0F) {
         return false;
     }
@@ -309,8 +438,26 @@ void service_activations() noexcept {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         result = false;
     }
+    const float deltaX = hit[0] - end[0];
+    const float deltaY = hit[1] - end[1];
+    const float deltaZ = hit[2] - end[2];
+    const bool changed = (std::isfinite(fraction) && fraction >= 0.0F && fraction < 0.99999F)
+                         || material != -1
+                         || (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ) > 1.0e-6F;
     output = {hit[0], hit[1], hit[2]};
-    return result;
+    if (hitFraction != nullptr) {
+        *hitFraction = fraction;
+    }
+    if (hitMaterial != nullptr) {
+        *hitMaterial = material;
+    }
+    if (nativeResult != nullptr) {
+        *nativeResult = result;
+    }
+    if (outputChanged != nullptr) {
+        *outputChanged = changed;
+    }
+    return result || changed;
 }
 
 [[nodiscard]] std::uint32_t spawn_one(std::uint32_t tag,
@@ -327,31 +474,28 @@ void service_activations() noexcept {
             initialized = g_directInitialize(storage.bytes.data(), tag) != 0;
         }
         void* const descriptor = initialized ? descriptor_of(storage) : nullptr;
-        if (descriptor == nullptr) {
-            return kInvalidDatum;
-        }
-        const std::array<float, 4> position{world[0], world[1], world[2], scale};
-        std::memcpy(static_cast<std::byte*>(descriptor) + 0x10, rotation.data(), sizeof rotation);
-        std::memcpy(static_cast<std::byte*>(descriptor) + 0x20, position.data(), sizeof position);
-        (void)g_factory(&result, descriptor);
-        if (result != kInvalidDatum && needs_activation(tag)) {
-            queue_activation(result, rotation, position);
+        if (descriptor != nullptr) {
+            const std::array<float, 4> position{world[0], world[1], world[2], scale};
+            std::memcpy(
+                static_cast<std::byte*>(descriptor) + 0x10, rotation.data(), sizeof rotation);
+            std::memcpy(
+                static_cast<std::byte*>(descriptor) + 0x20, position.data(), sizeof position);
+            (void)g_factory(&result, descriptor);
+            if (result != kInvalidDatum && needs_activation(tag)) {
+                queue_activation(result, rotation, position);
+            }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         result = kInvalidDatum;
     }
-    std::array<char, 128> line{};
-    const int written = std::snprintf(line.data(),
-                                      line.size(),
-                                      "ev=spawn stage=create result=%s tag=0x%08X handle=0x%08X",
-                                      result != kInvalidDatum ? "ok" : "fail",
-                                      static_cast<unsigned>(tag),
-                                      static_cast<unsigned>(result));
-    if (written > 0) {
-        core::log::write(core::log::Channel::client,
-                         result != kInvalidDatum ? core::log::Level::info : core::log::Level::warn,
-                         {line.data(), static_cast<std::size_t>(written)});
-    }
+    publish_spawn_observation(tag,
+                              result,
+                              result != kInvalidDatum ? SpawnOutcome::created
+                                                      : SpawnOutcome::factoryRejected,
+                              "create",
+                              &world,
+                              &rotation,
+                              scale);
     return result;
 }
 
@@ -362,6 +506,19 @@ void service_request() noexcept {
     std::array<float, 3> camera{};
     std::array<float, 3> forward{};
     if (!teleport::current_camera_pose(camera, forward)) {
+        std::uint32_t tag = kInvalidDatum;
+        AcquireSRWLockExclusive(&g_requestLock);
+        if (!g_request.tags.empty()) {
+            const std::size_t index = g_request.line ? g_request.cursor : 0;
+            if (index < g_request.tags.size()) {
+                tag = g_request.tags[index];
+            }
+            g_request = {};
+        }
+        ReleaseSRWLockExclusive(&g_requestLock);
+        if (tag != kInvalidDatum) {
+            publish_spawn_observation(tag, kInvalidDatum, SpawnOutcome::cameraUnavailable, "place");
+        }
         return;
     }
 
@@ -373,20 +530,45 @@ void service_request() noexcept {
         return;
     }
 
+    const std::uint32_t tag =
+        g_request.line ? g_request.tags[g_request.cursor] : g_request.tags.front();
     std::array<float, 3> position{};
-    bool placed = g_request.origin == Origin::player
-                      ? teleport::current_position(position)
-                      : crosshair_hit(g_request.settings.rayDistance, camera, forward, position);
+    bool placed = false;
+    SpawnOutcome placementFailure = SpawnOutcome::surfaceMiss;
+    switch (g_request.origin) {
+    case Origin::player:
+        placed = teleport::current_position(position);
+        placementFailure = SpawnOutcome::playerUnavailable;
+        break;
+    case Origin::surfaceRaycast:
+        placed = crosshair_hit(g_request.settings.rayDistance, camera, forward, position);
+        placementFailure = SpawnOutcome::surfaceMiss;
+        break;
+    case Origin::cameraRay:
+        position = {camera[0] + forward[0] * g_request.settings.rayDistance,
+                    camera[1] + forward[1] * g_request.settings.rayDistance,
+                    camera[2] + forward[2] * g_request.settings.rayDistance};
+        placed = std::all_of(
+            position.begin(), position.end(), [](float value) { return std::isfinite(value); });
+        placementFailure = SpawnOutcome::cameraUnavailable;
+        break;
+    case Origin::world:
+        position = g_request.absolutePosition;
+        placed = std::all_of(
+            position.begin(), position.end(), [](float value) { return std::isfinite(value); });
+        placementFailure = SpawnOutcome::factoryRejected;
+        break;
+    }
     if (!placed) {
         g_request = {};
         ReleaseSRWLockExclusive(&g_requestLock);
+        publish_spawn_observation(tag, kInvalidDatum, placementFailure, "place");
         return;
     }
 
     const Settings settings = g_request.settings;
     const std::size_t cursor = g_request.cursor++;
     g_request.lastProgress = GetTickCount64();
-    const std::uint32_t tag = g_request.line ? g_request.tags[cursor] : g_request.tags.front();
     if (g_request.line) {
         const std::uint32_t width = (std::max)(g_request.itemsPerRow, 1U);
         const float horizontalLength = std::sqrt(forward[0] * forward[0] + forward[1] * forward[1]);
@@ -453,7 +635,7 @@ void poll_shortcuts() noexcept {
         if (shortcut.tag == kInvalidDatum || shortcut.amount == 0 || busy()) {
             continue;
         }
-        const Origin origin = (index & 1U) == 0 ? Origin::player : Origin::crosshair;
+        const Origin origin = (index & 1U) == 0 ? Origin::player : Origin::surfaceRaycast;
         (void)request(shortcut.tag, origin, shortcut.amount, shortcut.settings);
     }
 }
@@ -546,6 +728,13 @@ void uninstall() noexcept {
     for (std::atomic_bool& down : g_shortcutDown) {
         down.store(false, std::memory_order_relaxed);
     }
+    g_spawnSequence.store(0, std::memory_order_release);
+    g_lastSpawnTag.store(0, std::memory_order_relaxed);
+    g_lastSpawnHandle.store(kInvalidDatum, std::memory_order_relaxed);
+    g_lastSpawnType.store(0, std::memory_order_relaxed);
+    g_lastSpawnOutcome.store(static_cast<std::uint8_t>(SpawnOutcome::none),
+                             std::memory_order_relaxed);
+    g_lastSpawnSucceeded.store(false, std::memory_order_relaxed);
 }
 
 bool ready() noexcept {
@@ -573,6 +762,10 @@ bool is_tag_resident(std::uint32_t tag) noexcept {
     }
 }
 
+bool object_live(std::uint32_t handle) noexcept {
+    return ready() && resolve_object(handle) != nullptr;
+}
+
 bool object_type(std::uint32_t tag, std::uint8_t& type) noexcept {
     type = 0;
     if (!is_tag_resident(tag)) {
@@ -586,12 +779,212 @@ bool object_type(std::uint32_t tag, std::uint8_t& type) noexcept {
     }
 }
 
+bool visit_world_objects(std::span<const WorldObjectDefinition> definitions,
+                         void* context,
+                         WorldObjectVisitor visitor,
+                         WorldObjectScan& scan) noexcept {
+    scan = {};
+    if (!ready() || definitions.empty() || visitor == nullptr || g_resolver == nullptr
+        || g_gameModule == nullptr) {
+        return false;
+    }
+
+    std::vector<ResolvedWorldDefinition> resolved;
+    resolved.reserve(definitions.size());
+    for (const WorldObjectDefinition& definition : definitions) {
+        if (definition.tag == 0 || definition.tag == kInvalidDatum) {
+            continue;
+        }
+        const std::byte* const address = safe_resolve_definition(definition.tag);
+        if (address != nullptr) {
+            resolved.push_back({definition, address});
+        }
+    }
+    std::sort(resolved.begin(), resolved.end(), [](const auto& left, const auto& right) {
+        return left.definition.tag < right.definition.tag;
+    });
+    resolved.erase(std::unique(resolved.begin(),
+                               resolved.end(),
+                               [](const auto& left, const auto& right) {
+                                   return left.definition.tag == right.definition.tag;
+                               }),
+                   resolved.end());
+    if (resolved.empty()) {
+        return false;
+    }
+
+    std::vector<const ResolvedWorldDefinition*> byAddress;
+    byAddress.reserve(resolved.size());
+    for (const ResolvedWorldDefinition& definition : resolved) {
+        byAddress.push_back(&definition);
+    }
+    std::sort(byAddress.begin(), byAddress.end(), [](const auto* left, const auto* right) {
+        return reinterpret_cast<std::uintptr_t>(left->address)
+               < reinterpret_cast<std::uintptr_t>(right->address);
+    });
+
+    std::byte* const descriptor =
+        reinterpret_cast<std::byte*>(g_gameModule) + kObjectDatumDescriptorRva;
+    std::byte* base = nullptr;
+    std::uint32_t stride = 0;
+    if (!safe_read(descriptor + kObjectDatumBaseOffset, base)
+        || !safe_read(descriptor + kObjectDatumStrideOffset, stride) || base == nullptr
+        || stride != kObjectDatumBytes) {
+        return false;
+    }
+
+    for (std::size_t slot = 0; slot < kObjectDatumCapacity; ++slot) {
+        ++scan.slotsScanned;
+        std::byte* const object = base + slot * stride;
+        std::uint32_t before = kInvalidDatum;
+        if (!safe_read(object + kObjectHandleOffset, before) || before == kInvalidDatum
+            || (before & 0x1FFFU) != slot) {
+            continue;
+        }
+        ++scan.liveHandles;
+
+        std::array<std::byte, kObjectDatumBytes> snapshot{};
+        std::uint32_t after = kInvalidDatum;
+        if (!safe_read(object, snapshot) || !safe_read(object + kObjectHandleOffset, after)
+            || before != after) {
+            ++scan.unstableObjects;
+            continue;
+        }
+
+        const ResolvedWorldDefinition* selected = nullptr;
+        bool ambiguous = false;
+        bool matchedTag = false;
+        bool matchedPointer = false;
+        for (std::size_t offset = 0; offset + sizeof(std::uint32_t) <= snapshot.size();
+             offset += alignof(std::uint32_t)) {
+            if (offset == kObjectHandleOffset) {
+                continue;
+            }
+            std::uint32_t value = 0;
+            std::memcpy(&value, snapshot.data() + offset, sizeof value);
+            const ResolvedWorldDefinition* const candidate =
+                find_world_definition_by_tag(resolved, value);
+            if (candidate != nullptr) {
+                consider_world_definition(candidate, selected, ambiguous);
+                matchedTag = matchedTag || (!ambiguous && selected == candidate);
+            }
+        }
+        for (std::size_t offset = 0; offset + sizeof(const std::byte*) <= snapshot.size();
+             offset += alignof(const std::byte*)) {
+            const std::byte* value = nullptr;
+            std::memcpy(&value, snapshot.data() + offset, sizeof value);
+            const ResolvedWorldDefinition* const candidate =
+                find_world_definition_by_address(byAddress, value);
+            if (candidate != nullptr) {
+                consider_world_definition(candidate, selected, ambiguous);
+                matchedPointer = matchedPointer || (!ambiguous && selected == candidate);
+            }
+        }
+        if (ambiguous) {
+            ++scan.ambiguousObjects;
+            continue;
+        }
+        if (selected == nullptr) {
+            continue;
+        }
+
+        WorldObjectObservation observation{};
+        observation.handle = before;
+        observation.tag = selected->definition.tag;
+        observation.objectType = selected->definition.objectType;
+        observation.identity = matchedTag && matchedPointer ? WorldObjectIdentity::tagAndPointer
+                               : matchedPointer             ? WorldObjectIdentity::definitionPointer
+                                                            : WorldObjectIdentity::definitionTag;
+        ++scan.matchedObjects;
+        if (!visitor(context, observation)) {
+            break;
+        }
+    }
+    return true;
+}
+
+SpawnObservation last_spawn_observation() noexcept {
+    SpawnObservation result{};
+    result.sequence = g_spawnSequence.load(std::memory_order_acquire);
+    result.tag = g_lastSpawnTag.load(std::memory_order_relaxed);
+    result.handle = g_lastSpawnHandle.load(std::memory_order_relaxed);
+    result.objectType = g_lastSpawnType.load(std::memory_order_relaxed);
+    result.outcome = static_cast<SpawnOutcome>(g_lastSpawnOutcome.load(std::memory_order_relaxed));
+    for (std::size_t index = 0; index < result.position.size(); ++index) {
+        result.position[index] = g_lastSpawnPosition[index].load(std::memory_order_relaxed);
+    }
+    for (std::size_t index = 0; index < result.rotation.size(); ++index) {
+        result.rotation[index] = g_lastSpawnRotation[index].load(std::memory_order_relaxed);
+    }
+    result.scale = g_lastSpawnScale.load(std::memory_order_relaxed);
+    result.succeeded = g_lastSpawnSucceeded.load(std::memory_order_relaxed);
+    return result;
+}
+
+std::string_view spawn_outcome_text(SpawnOutcome outcome) noexcept {
+    return outcome_label(outcome);
+}
+
+bool probe_crosshair(float distance, RaycastProbe& output) noexcept {
+    output = {};
+    output.fraction = 1.0F;
+    output.material = -1;
+    if (!ready() || !std::isfinite(distance) || distance <= 0.0F) {
+        return false;
+    }
+
+    std::array<float, 3> forward{};
+    if (!teleport::current_camera_pose(output.start, forward)) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::warn,
+                         "ev=spawn stage=raycast result=unavailable reason=camera");
+        return false;
+    }
+    output.end = {output.start[0] + forward[0] * distance,
+                  output.start[1] + forward[1] * distance,
+                  output.start[2] + forward[2] * distance};
+    output.hit = crosshair_hit(distance,
+                               output.start,
+                               forward,
+                               output.position,
+                               &output.fraction,
+                               &output.material,
+                               &output.nativeResult,
+                               &output.outputChanged);
+    std::array<char, 384> line{};
+    const int written = std::snprintf(
+        line.data(),
+        line.size(),
+        "ev=spawn stage=raycast result=%s native=%u changed=%u fraction=%.6f material=%d "
+        "start=%.3f,%.3f,%.3f end=%.3f,%.3f,%.3f output=%.3f,%.3f,%.3f",
+        output.hit ? "hit" : "miss",
+        output.nativeResult ? 1U : 0U,
+        output.outputChanged ? 1U : 0U,
+        static_cast<double>(output.fraction),
+        output.material,
+        static_cast<double>(output.start[0]),
+        static_cast<double>(output.start[1]),
+        static_cast<double>(output.start[2]),
+        static_cast<double>(output.end[0]),
+        static_cast<double>(output.end[1]),
+        static_cast<double>(output.end[2]),
+        static_cast<double>(output.position[0]),
+        static_cast<double>(output.position[1]),
+        static_cast<double>(output.position[2]));
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         output.hit ? core::log::Level::info : core::log::Level::warn,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+    return true;
+}
+
 bool request(std::uint32_t tag,
              Origin origin,
              std::uint32_t amount,
              const Settings& settings) noexcept {
-    if (!ready() || !is_tag_resident(tag) || amount == 0 || amount > kMaximumAmount
-        || !valid_settings(settings)) {
+    if (!ready() || origin == Origin::world || !is_tag_resident(tag) || amount == 0
+        || amount > kMaximumAmount || !valid_settings(settings)) {
         return false;
     }
     AcquireSRWLockExclusive(&g_requestLock);
@@ -606,6 +999,53 @@ bool request(std::uint32_t tag,
     g_request.amount = amount;
     g_request.lastProgress = GetTickCount64();
     ReleaseSRWLockExclusive(&g_requestLock);
+    return true;
+}
+
+bool request_at(std::uint32_t tag,
+                const std::array<float, 3>& position,
+                const std::array<float, 4>& rotation,
+                float scale) noexcept {
+    Settings settings{};
+    settings.lift = 0.0F;
+    settings.scale = scale;
+    settings.rotation = rotation;
+    settings.overrideRotation = true;
+    if (!ready() || !is_tag_resident(tag) || !valid_settings(settings)
+        || !std::all_of(
+            position.begin(), position.end(), [](float value) { return std::isfinite(value); })) {
+        return false;
+    }
+    AcquireSRWLockExclusive(&g_requestLock);
+    if (!g_request.tags.empty()) {
+        ReleaseSRWLockExclusive(&g_requestLock);
+        return false;
+    }
+    g_request = {};
+    g_request.tags.push_back(tag);
+    g_request.settings = settings;
+    g_request.absolutePosition = position;
+    g_request.origin = Origin::world;
+    g_request.amount = 1;
+    g_request.lastProgress = GetTickCount64();
+    ReleaseSRWLockExclusive(&g_requestLock);
+    return true;
+}
+
+bool request_transform(std::uint32_t handle,
+                       const std::array<float, 3>& position,
+                       const std::array<float, 4>& rotation,
+                       float scale) noexcept {
+    if (!ready() || handle == kInvalidDatum || !object_live(handle) || !std::isfinite(scale)
+        || scale <= 0.0F
+        || !std::all_of(
+            position.begin(), position.end(), [](float value) { return std::isfinite(value); })
+        || !std::all_of(
+            rotation.begin(), rotation.end(), [](float value) { return std::isfinite(value); })) {
+        return false;
+    }
+    const std::array<float, 4> positionScale{position[0], position[1], position[2], scale};
+    queue_activation(handle, rotation, positionScale);
     return true;
 }
 

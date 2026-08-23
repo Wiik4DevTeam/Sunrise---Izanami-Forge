@@ -49,6 +49,9 @@ std::atomic_bool g_keyDown{false};
 std::atomic_uint32_t g_requestAge{0};
 /** Set while the feature is usable, so the per-tick path costs one atomic read when it is not. */
 std::atomic_bool g_active{false};
+/** Forge focus request, consumed on a game-owned camera or physics tick. */
+std::atomic_bool g_editorMoveRequested{false};
+std::array<std::atomic<float>, kVectorLanes> g_editorMovePosition{};
 
 /**
  * The player's physics component, kept from the last tick that carried it. At rest the sync stops
@@ -64,6 +67,7 @@ CameraSingleton g_cameraSingleton{};
 /** Written by the camera hook and read by the physics hook. Both run on the same thread. */
 std::array<float, kVectorLanes> g_forward{};
 std::array<float, kVectorLanes> g_cameraPosition{};
+SRWLOCK g_cameraPoseLock{SRWLOCK_INIT};
 
 /**
  * Reads one value out of game memory without faulting on a torn pointer.
@@ -277,9 +281,14 @@ void set_vertical_velocity(std::byte* body, float value) noexcept {
  * @return True when the new position was stored.
  */
 [[nodiscard]] bool move_body(std::byte* body, float distance) noexcept {
+    Vector forward{};
+    if (!camera_forward(forward)) {
+        report_skip("camera");
+        return false;
+    }
     std::array<float, kVectorLanes> delta{};
     for (std::size_t lane = 0; lane < kVectorLanes; ++lane) {
-        delta[lane] = g_forward[lane] * distance;
+        delta[lane] = forward[lane] * distance;
     }
     std::array<float, kVectorLanes> position{};
     std::array<float, kVectorLanes> moved{};
@@ -344,6 +353,7 @@ void clear_targets() noexcept {
     g_keyDown.store(false, std::memory_order_relaxed);
     g_requestAge.store(0, std::memory_order_relaxed);
     g_active.store(false, std::memory_order_relaxed);
+    g_editorMoveRequested.store(false, std::memory_order_release);
     g_playerComponent.store(nullptr, std::memory_order_relaxed);
 }
 
@@ -381,9 +391,16 @@ bool current_controlled_handle(std::uint32_t& output) noexcept {
 
 /** Reads the camera pose most recently published by the camera hook. */
 bool current_camera_pose(Vector& position, Vector& forward) noexcept {
-    position = g_cameraPosition;
-    forward = g_forward;
-    if (!g_forwardValid.load(std::memory_order_acquire)) {
+    AcquireSRWLockShared(&g_cameraPoseLock);
+    const bool valid = g_forwardValid.load(std::memory_order_acquire);
+    if (valid) {
+        position = g_cameraPosition;
+        forward = g_forward;
+    }
+    ReleaseSRWLockShared(&g_cameraPoseLock);
+    if (!valid) {
+        position = {};
+        forward = {};
         return false;
     }
     for (std::size_t lane = 0; lane < kVectorLanes; ++lane) {
@@ -410,9 +427,11 @@ void capture_forward(std::uint32_t playerIndex) noexcept {
         || !read_at(block + kCameraPositionX, position)) {
         return;
     }
+    AcquireSRWLockExclusive(&g_cameraPoseLock);
     g_forward = forward;
     g_cameraPosition = position;
     g_forwardValid.store(true, std::memory_order_release);
+    ReleaseSRWLockExclusive(&g_cameraPoseLock);
 }
 
 /** Latches one teleport request if the bound key went down this frame. */
@@ -458,6 +477,13 @@ void apply_pending(void* component) noexcept {
         }
         g_playerComponent.store(physics, std::memory_order_relaxed);
     }
+    if (g_editorMoveRequested.exchange(false, std::memory_order_acq_rel)) {
+        Vector position{};
+        for (std::size_t lane = 0; lane < kVectorLanes; ++lane) {
+            position[lane] = g_editorMovePosition[lane].load(std::memory_order_relaxed);
+        }
+        (void)write_position(physics, position);
+    }
     if (!g_active.load(std::memory_order_relaxed)) {
         return;
     }
@@ -471,6 +497,19 @@ void apply_pending(void* component) noexcept {
 
 /** Runs the move for a request no physics tick collected. */
 void force_pending() noexcept {
+    if (g_editorMoveRequested.load(std::memory_order_acquire)) {
+        std::byte* const physics = g_playerComponent.load(std::memory_order_relaxed);
+        if (physics != nullptr && g_controlledHandle != nullptr && owns_player(physics)
+            && g_editorMoveRequested.exchange(false, std::memory_order_acq_rel)) {
+            Vector position{};
+            for (std::size_t lane = 0; lane < kVectorLanes; ++lane) {
+                position[lane] = g_editorMovePosition[lane].load(std::memory_order_relaxed);
+            }
+            if (write_position(physics, position)) {
+                invoke_sync(physics);
+            }
+        }
+    }
     if (!g_requested.load(std::memory_order_acquire)
         || !g_forwardValid.load(std::memory_order_acquire)
         || g_requestAge.load(std::memory_order_relaxed) < kForceAfterFrames) {
@@ -530,6 +569,22 @@ bool move_local_player(const Vector& position) noexcept {
     return true;
 }
 
+/** Queues an absolute move for a game-owned tick instead of synchronising from the caller. */
+bool request_local_player_move(const Vector& position) noexcept {
+    std::byte* const component = g_playerComponent.load(std::memory_order_acquire);
+    if (component == nullptr || g_controlledHandle == nullptr || !owns_player(component)) {
+        return false;
+    }
+    for (std::size_t lane = 0; lane < kVectorLanes; ++lane) {
+        if (!std::isfinite(position[lane])) {
+            return false;
+        }
+        g_editorMovePosition[lane].store(position[lane], std::memory_order_relaxed);
+    }
+    g_editorMoveRequested.store(true, std::memory_order_release);
+    return true;
+}
+
 /** Reads the linear velocity of the body a physics component drives. */
 bool read_velocity(void* component, Vector& velocity) noexcept {
     if (component == nullptr) {
@@ -550,10 +605,16 @@ bool write_velocity(void* component, const Vector& velocity) noexcept {
 
 /** Reports the camera forward vector published this frame. */
 bool camera_forward(Vector& forward) noexcept {
-    if (!g_forwardValid.load(std::memory_order_acquire)) {
+    AcquireSRWLockShared(&g_cameraPoseLock);
+    const bool valid = g_forwardValid.load(std::memory_order_acquire);
+    if (valid) {
+        forward = g_forward;
+    }
+    ReleaseSRWLockShared(&g_cameraPoseLock);
+    if (!valid) {
+        forward = {};
         return false;
     }
-    forward = g_forward;
     return true;
 }
 

@@ -62,9 +62,11 @@ constexpr std::array<std::byte, 4> kSuccessResult{
 constexpr std::size_t kCachedDataBranchOffset = 2;
 constexpr std::array<std::byte, 2> kAlwaysTakeSuccessBranch{std::byte{0x90}, std::byte{0xE9}};
 
-/** Izanami's staged package and the patch currently under loader investigation. */
-constexpr std::uint16_t kIzanamiPackageId = 0x0687;
-constexpr std::uint16_t kIzanamiPatchId = 6;
+/** Izanami-authored packages currently under loader investigation. */
+constexpr std::uint16_t kPandoraPackageId = 0x0687;
+constexpr std::uint16_t kPandoraPatchId = 6;
+constexpr std::uint16_t kTowerProbePackageId = 0x0369;
+constexpr std::uint16_t kTowerProbeFirstPatchId = 7;
 
 /** ABI recovered from the validator's native call site. */
 using ValidateHeader = std::int32_t(__fastcall*)(const std::uint32_t* validationMask,
@@ -81,7 +83,8 @@ std::array<std::byte, kSuccessResult.size()> g_extendedHeaderOriginal{};
 std::byte* g_cachedDataBranch{};
 std::array<std::byte, kAlwaysTakeSuccessBranch.size()> g_cachedDataBranchOriginal{};
 std::atomic_bool g_stockHeaderObserved{false};
-std::atomic_bool g_izanamiHeaderObserved{false};
+std::atomic_bool g_pandoraHeaderObserved{false};
+std::atomic_bool g_towerProbeHeaderObserved{false};
 
 /** Records one stock control and one Izanami target at the native header-validation boundary. */
 void report_header_observation(std::uint16_t packageId,
@@ -90,13 +93,21 @@ void report_header_observation(std::uint16_t packageId,
                                std::int32_t expectedFileSize,
                                std::uint8_t rsaTrusted,
                                std::int32_t validatorResult) noexcept {
-    const bool izanami = packageId == kIzanamiPackageId && patchId == kIzanamiPatchId;
-    if (izanami) {
-        if (g_izanamiHeaderObserved.exchange(true, std::memory_order_acq_rel)) {
+    const bool pandora = packageId == kPandoraPackageId && patchId == kPandoraPatchId;
+    const bool towerProbe = packageId == kTowerProbePackageId && patchId >= kTowerProbeFirstPatchId;
+    const char* kind = "stock";
+    if (pandora) {
+        kind = "pandora";
+        if (g_pandoraHeaderObserved.exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+    } else if (towerProbe) {
+        kind = "tower_probe";
+        if (g_towerProbeHeaderObserved.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
     } else {
-        if (packageId == kIzanamiPackageId
+        if (packageId == kPandoraPackageId || packageId == kTowerProbePackageId
             || g_stockHeaderObserved.exchange(true, std::memory_order_acq_rel)) {
             return;
         }
@@ -109,7 +120,7 @@ void report_header_observation(std::uint16_t packageId,
                                      "package=0x%04X patch=%u header=%u expected=%u rsa=%u "
                                      "validator=%d",
                                      validatorResult > 0 ? "accepted" : "rejected",
-                                     izanami ? "izanami" : "stock",
+                                     kind,
                                      packageId,
                                      patchId,
                                      headerFileSize,
@@ -208,7 +219,8 @@ bool install() noexcept {
         return false;
     }
     g_stockHeaderObserved.store(false, std::memory_order_release);
-    g_izanamiHeaderObserved.store(false, std::memory_order_release);
+    g_pandoraHeaderObserved.store(false, std::memory_order_release);
+    g_towerProbeHeaderObserved.store(false, std::memory_order_release);
     const hooking::detour::Spec spec{target, reinterpret_cast<void*>(&validate_header)};
     if (!hooking::detour::install(spec, g_handle)) {
         core::log::write(core::log::Channel::client,
@@ -266,7 +278,8 @@ bool uninstall() noexcept {
     }
     const bool detached = !g_handle.attached || hooking::detour::uninstall(g_handle);
     g_stockHeaderObserved.store(false, std::memory_order_release);
-    g_izanamiHeaderObserved.store(false, std::memory_order_release);
+    g_pandoraHeaderObserved.store(false, std::memory_order_release);
+    g_towerProbeHeaderObserved.store(false, std::memory_order_release);
     return restored && detached;
 }
 

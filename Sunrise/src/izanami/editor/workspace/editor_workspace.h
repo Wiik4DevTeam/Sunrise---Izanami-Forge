@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -64,7 +65,9 @@ public:
     [[nodiscard]] std::size_t selected_template_index() const noexcept;
     [[nodiscard]] bool select_template(std::size_t index) noexcept;
     [[nodiscard]] LaunchResult open_selected_template();
+    [[nodiscard]] LaunchResult stage_selected_template_package();
     [[nodiscard]] LaunchResult launch_selected_template();
+    [[nodiscard]] LaunchResult launch_scenario(std::string_view scenarioName);
     [[nodiscard]] LaunchResult probe_selected_template_launch();
     [[nodiscard]] LaunchResult arm_selected_template_redirect();
     [[nodiscard]] LaunchResult request_native_director_handoff();
@@ -73,11 +76,13 @@ public:
     void return_to_launcher();
 
     [[nodiscard]] core::ForgeUUID create_forge_object(std::string name);
-    [[nodiscard]] core::ForgeUUID create_object(std::string name,
-                                                core::ObjectKind kind,
-                                                core::ResourceId resource,
-                                                core::Transform transform,
-                                                core::ForgeUUID parent = {});
+    [[nodiscard]] core::ForgeUUID
+    create_object(std::string name,
+                  core::ObjectKind kind,
+                  core::ResourceId resource,
+                  core::Transform transform,
+                  core::ForgeUUID parent = {},
+                  std::optional<core::NativeMapBinding> nativeMapBinding = std::nullopt);
     [[nodiscard]] core::ForgeUUID create_folder(std::string name);
     [[nodiscard]] core::ForgeUUID duplicate_selected();
     [[nodiscard]] bool delete_selected();

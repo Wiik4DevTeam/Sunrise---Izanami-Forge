@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 #include "../../../state/build_data/runtime.h"
 #include "../../../state/build_data/scenarios/definition.h"
 #include "../../runtime/baseplate_composition.h"
+#include "../../runtime/custom_package_builder.h"
 #include "../../runtime/gameplay_editor_mode.h"
 
 namespace sunrise::izanami::editor::workspace {
@@ -21,14 +23,45 @@ namespace sunrise::izanami::editor::workspace {
 namespace {
 
 constexpr std::uint64_t kIzanamiUuidDomain = 0x495A414E414D4930ULL;
+constexpr std::string_view kTowerMapRoot = "map:city_tower_d2:root";
+constexpr std::string_view kPandoraMapRoot = "map:pandora:root";
+constexpr std::uint32_t kStaticMapResourceClass = 0x808071B3U;
+constexpr std::uint32_t kKnownTowerAggregateTable = 0x80ED22FBU;
+constexpr std::uint32_t kKnownTowerAggregateEntry = 0;
+constexpr std::uint32_t kKnownTowerAggregateParent = 0x80ED22FAU;
+constexpr std::uint32_t kKnownTowerSkyboxTable = 0x80ED2B6FU;
+constexpr std::uint32_t kKnownTowerSkyboxEntry = 0;
+constexpr std::uint32_t kKnownTowerSkyboxParent = 0x80ED2B6EU;
+/** Moves the isolated resident floor mesh from its authored transform to the Tower courtyard. */
+constexpr core::Vec3 kTowerLocalBaseplateOffset{82.790F, 42.272F, 10.525F};
+constexpr std::size_t kTowerCandidateCapacity = 256;
+constexpr std::size_t kTowerEditCapacity = 32;
+constexpr float kSuppressedStaticScale = 0.0001F;
 
-constexpr std::array<BaseplateTemplate, 6> kTemplates{{
+constexpr std::array<BaseplateTemplate, 7> kTemplates{{
+    {"pandora_carrier_lab",
+     "Pandora Functional Lab",
+     "vfx_shade_test / Pandora",
+     "bubble 0 / slice 0",
+     "Primary non-social package-research carrier. Its stock scenario is useful for reduction "
+     "work, but direct launch is blocked because the rewritten activity stalls during native "
+     "prologue loading. Run live spawn and collision experiments in a stable current world.",
+     "vfx_shade_test",
+     0,
+     0,
+     state::activity::forced::kAbsentSpawnSetHash,
+     true,
+     false,
+     false},
     {"blank_baseplate",
-     "Blank Baseplate",
-     "Izanami Baseplate",
-     "custom package required",
-     "Targets a scenery-free Izanami map package. Stock Destiny destinations are deliberately "
-     "disabled for this template until that package has been generated and validated.",
+     "Legacy Tower Reduction",
+     "Tower carrier experiment",
+     "Tower carrier package patch",
+     "Builds a staged blank-world draft inside the proven Tower carrier. It retains the "
+     "field-identified skybox, isolates one Tower-resident surface at the courtyard arrival, "
+     "quarantines other discovered static scenery and 210 source-classified standalone scenery "
+     "entities plus 165 component-backed scenery owners, while preserving the complete "
+     "field-tested collision baseline plus all System and Interactive nodes.",
      "",
      0,
      0,
@@ -53,13 +86,13 @@ constexpr std::array<BaseplateTemplate, 6> kTemplates{{
      "VFX Shade Test Baseplate",
      "vfx_shade_test",
      "bubble 0 / slice 0",
-     "Dirty installed test scenario kept as a proof target. It can show leftover environment "
-     "pieces, so Blank Baseplate no longer prefers it.",
+     "Package reference retained for research. Direct launch is disabled because rewriting the "
+     "working Tower selection to this scenario stalls during native prologue loading.",
      "vfx_shade_test",
      0,
      0,
      0,
-     true,
+     false,
      false,
      false},
     {"current_bubble_template",
@@ -127,6 +160,20 @@ struct DirectLaunchProbe {
            && left.translation.z == right.translation.z && left.rotation.x == right.rotation.x
            && left.rotation.y == right.rotation.y && left.rotation.z == right.rotation.z
            && left.rotation.w == right.rotation.w && left.uniformScale == right.uniformScale;
+}
+
+[[nodiscard]] bool is_known_tower_aggregate(
+    const runtime::custom_package_builder::StaticPlacementCandidate& candidate) noexcept {
+    return candidate.binding.tableTag == kKnownTowerAggregateTable
+           && candidate.binding.entryIndex == kKnownTowerAggregateEntry
+           && candidate.binding.parentTag == kKnownTowerAggregateParent;
+}
+
+[[nodiscard]] bool is_known_tower_skybox(
+    const runtime::custom_package_builder::StaticPlacementCandidate& candidate) noexcept {
+    return candidate.binding.tableTag == kKnownTowerSkyboxTable
+           && candidate.binding.entryIndex == kKnownTowerSkyboxEntry
+           && candidate.binding.parentTag == kKnownTowerSkyboxParent;
 }
 
 [[nodiscard]] std::string default_name_for_kind(core::ObjectKind kind) {
@@ -370,12 +417,7 @@ void report_direct_launch_probe(const DirectLaunchProbe& probe) noexcept {
     }
 }
 
-[[nodiscard]] bool arm_forced_destination(const BaseplateTemplate& target) noexcept {
-    ResolvedDestinationTarget resolved{};
-    if (!resolve_template_target(target, resolved)) {
-        report_baseplate_target("resolve", "fail", resolved);
-        return false;
-    }
+[[nodiscard]] bool arm_forced_destination(const ResolvedDestinationTarget& resolved) noexcept {
     state::activity::forced::ForcedDestination forced{};
     const std::size_t length = (std::min)(resolved.packageNameLength, forced.packageName.size());
     std::copy_n(resolved.packageName.begin(), length, forced.packageName.begin());
@@ -390,6 +432,15 @@ void report_direct_launch_probe(const DirectLaunchProbe& probe) noexcept {
     const bool published = state::activity::forced::publish(forced);
     report_baseplate_target("arm", published ? "ok" : "fail", resolved);
     return published;
+}
+
+[[nodiscard]] bool arm_forced_destination(const BaseplateTemplate& target) noexcept {
+    ResolvedDestinationTarget resolved{};
+    if (!resolve_template_target(target, resolved)) {
+        report_baseplate_target("resolve", "fail", resolved);
+        return false;
+    }
+    return arm_forced_destination(resolved);
 }
 
 [[nodiscard]] DirectLaunchProbe probe_forced_activity_manager_request() noexcept {
@@ -511,22 +562,26 @@ LaunchResult EditorWorkspace::open_selected_template() {
     activeTemplate_ = selectedTemplate_;
     sessionState_ = SessionState::activeWorkspace;
 
-    core::Transform anchorTransform{};
-    anchorTransform.uniformScale = 1.0F;
-    const core::ForgeUUID anchor =
-        create_object("Baseplate Anchor", core::ObjectKind::forgeOnly, {}, anchorTransform);
+    core::ForgeUUID anchor{};
+    if (launchTemplate.id != std::string_view{"blank_baseplate"}) {
+        core::Transform anchorTransform{};
+        anchorTransform.uniformScale = 1.0F;
+        anchor =
+            create_object("Baseplate Anchor", core::ObjectKind::forgeOnly, {}, anchorTransform);
 
-    core::Transform patternTransform{};
-    patternTransform.translation.x = 4.0F;
-    patternTransform.translation.z = 4.0F;
-    patternTransform.uniformScale = 1.0F;
-    (void)create_object("Local Pattern Marker", core::ObjectKind::forgeOnly, {}, patternTransform);
+        core::Transform patternTransform{};
+        patternTransform.translation.x = 4.0F;
+        patternTransform.translation.z = 4.0F;
+        patternTransform.uniformScale = 1.0F;
+        (void)create_object(
+            "Local Pattern Marker", core::ObjectKind::forgeOnly, {}, patternTransform);
 
-    core::Transform doorTransform{};
-    doorTransform.translation.x = -4.0F;
-    doorTransform.translation.z = 2.0F;
-    doorTransform.uniformScale = 1.0F;
-    (void)create_object("Fate Test Door", core::ObjectKind::forgeOnly, {}, doorTransform);
+        core::Transform doorTransform{};
+        doorTransform.translation.x = -4.0F;
+        doorTransform.translation.z = 2.0F;
+        doorTransform.uniformScale = 1.0F;
+        (void)create_object("Fate Test Door", core::ObjectKind::forgeOnly, {}, doorTransform);
+    }
 
     history_.clear();
     queue_.clear();
@@ -535,17 +590,51 @@ LaunchResult EditorWorkspace::open_selected_template() {
     }
 
     std::array<char, 256> message{};
-    const int written =
-        std::snprintf(message.data(),
-                      message.size(),
-                      "Editor opened for %s. Runtime actions are separate and experimental.",
-                      launchTemplate.displayName.data());
+    const int written = std::snprintf(
+        message.data(),
+        message.size(),
+        launchTemplate.id == std::string_view{"blank_baseplate"}
+            ? "Editor opened for %s. Build the Tower patch to resolve package-backed placements."
+            : "Editor opened for %s. Runtime actions are separate and experimental.",
+        launchTemplate.displayName.data());
     lastGameplayModeMessage_ = written > 0
                                    ? std::string(message.data(), static_cast<std::size_t>(written))
                                    : std::string{"Editor opened."};
     lastLaunchMessage_ = lastGameplayModeMessage_;
     report("open_editor", "ok", launchTemplate.id);
     return {.workspaceStarted = true, .message = lastLaunchMessage_};
+}
+
+/** Builds a fail-closed package draft for templates with a defined authoring strategy. */
+LaunchResult EditorWorkspace::stage_selected_template_package() {
+    const std::size_t templateIndex =
+        sessionState_ == SessionState::activeWorkspace ? activeTemplate_ : selectedTemplate_;
+    if (templateIndex >= kTemplates.size()) {
+        lastGameplayModeMessage_ = "No carrier selected.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        return {.message = lastLaunchMessage_};
+    }
+
+    selectedTemplate_ = templateIndex;
+    const BaseplateTemplate& target = kTemplates[templateIndex];
+    if (target.id != std::string_view{"pandora_carrier_lab"}) {
+        lastGameplayModeMessage_ =
+            "This carrier has no standalone package-stage experiment. Use its dedicated controls.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("package_stage", "unsupported", target.id);
+        return {.message = lastLaunchMessage_};
+    }
+
+    const bool staged = runtime::custom_package_builder::stage_map_root(kPandoraMapRoot);
+    lastGameplayModeMessage_ =
+        staged
+            ? "Pandora reduction draft validated and written with the .izanami-stage suffix. "
+              "It is not active game content until deliberately promoted while Destiny is closed."
+            : "Pandora reduction draft failed closed. Inspect izanami package-stage log events.";
+    lastLaunchMessage_ = lastGameplayModeMessage_;
+    report("package_stage", staged ? "ok" : "fail", target.id);
+    return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+            .message = lastLaunchMessage_};
 }
 
 /** Builds Blank Baseplate's staged package or starts a stock template's native activity. */
@@ -561,22 +650,177 @@ LaunchResult EditorWorkspace::launch_selected_template() {
     selectedTemplate_ = templateIndex;
     const BaseplateTemplate& target = kTemplates[templateIndex];
     const bool isolatedBaseplate = target.id == std::string_view{"blank_baseplate"};
+    if (target.id == std::string_view{"pandora_carrier_lab"}) {
+        lastGameplayModeMessage_ =
+            "Pandora direct launch is blocked: the activity session succeeds but Destiny stalls "
+            "during native prologue loading. Use Tower Carrier Control for live runtime tests, "
+            "or arm Pandora as an explicit redirect experiment.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_native", "blocked_prologue_stall", target.id);
+        return {.message = lastLaunchMessage_};
+    }
     if (isolatedBaseplate) {
         LaunchResult result{};
-        if (!runtime::baseplate_composition::arm()) {
+        if (sessionState_ != SessionState::activeWorkspace || activeTemplate_ != templateIndex) {
+            (void)open_selected_template();
+        }
+
+        std::array<runtime::custom_package_builder::StaticPlacementCandidate,
+                   kTowerCandidateCapacity>
+            candidates{};
+        std::size_t candidateCount = 0;
+        if (!runtime::custom_package_builder::discover_static_placements(
+                kTowerMapRoot, candidates, candidateCount)) {
             lastGameplayModeMessage_ =
-                "Izanami could not inspect Pandora or generate its staged map package.";
+                "Izanami could not catalog Tower static placements from the live package graph.";
+            lastLaunchMessage_ = lastGameplayModeMessage_;
+            report("placement_catalog", "fail", target.id);
+            result.message = lastLaunchMessage_;
+            return result;
+        }
+
+        const auto candidateSpan =
+            std::span<const runtime::custom_package_builder::StaticPlacementCandidate>{candidates}
+                .first(candidateCount);
+        const auto aggregate =
+            std::find_if(candidateSpan.begin(), candidateSpan.end(), is_known_tower_aggregate);
+        const auto skybox =
+            std::find_if(candidateSpan.begin(), candidateSpan.end(), is_known_tower_skybox);
+        if (aggregate == candidateSpan.end() || skybox == candidateSpan.end()) {
+            lastGameplayModeMessage_ =
+                "A field-identified Tower map layer was not present in the current package chain.";
+            lastLaunchMessage_ = lastGameplayModeMessage_;
+            report("placement_catalog",
+                   aggregate == candidateSpan.end() ? "aggregate_missing" : "skybox_missing",
+                   target.id);
+            result.message = lastLaunchMessage_;
+            return result;
+        }
+
+        const bool hasPackageBindings =
+            std::any_of(scene_.objects().begin(), scene_.objects().end(), [](const auto& object) {
+                return object.nativeMapBinding.has_value();
+            });
+        if (!hasPackageBindings) {
+            if (candidateSpan.size() > kTowerEditCapacity) {
+                lastGameplayModeMessage_ =
+                    "The Tower static catalog is larger than the guarded composition capacity.";
+                lastLaunchMessage_ = lastGameplayModeMessage_;
+                report("placement_bind", "overflow", target.id);
+                result.message = lastLaunchMessage_;
+                return result;
+            }
+
+            reset();
+            activeTemplate_ = templateIndex;
+            sessionState_ = SessionState::activeWorkspace;
+
+            core::Transform aggregateTarget{};
+            aggregateTarget.translation = kTowerLocalBaseplateOffset;
+            const core::ForgeUUID aggregateId =
+                create_object("Baseplate Geometry [Tower-local floor candidate]",
+                              core::ObjectKind::staticInstance,
+                              {kStaticMapResourceClass, aggregate->binding.parentTag, 0},
+                              aggregateTarget,
+                              {},
+                              aggregate->binding);
+
+            core::Transform skyboxTarget = skybox->binding.sourceTransform;
+            skyboxTarget.translation = {};
+            skyboxTarget.uniformScale = 1.0F;
+            const core::ForgeUUID skyboxId =
+                create_object("Skybox [Tower ambient]",
+                              core::ObjectKind::staticInstance,
+                              {kStaticMapResourceClass, skybox->binding.parentTag, 0},
+                              skyboxTarget,
+                              {},
+                              skybox->binding);
+
+            bool compositionBound = !aggregateId.is_nil() && !skyboxId.is_nil();
+            for (const auto& candidate : candidateSpan) {
+                if (is_known_tower_aggregate(candidate) || is_known_tower_skybox(candidate)) {
+                    continue;
+                }
+                core::Transform quarantineTarget = candidate.binding.sourceTransform;
+                quarantineTarget.uniformScale = kSuppressedStaticScale;
+                std::array<char, 96> quarantineName{};
+                const int quarantineNameLength = std::snprintf(quarantineName.data(),
+                                                               quarantineName.size(),
+                                                               "Suppressed Scenery [0x%08X:%u]",
+                                                               candidate.binding.tableTag,
+                                                               candidate.binding.entryIndex);
+                const core::ForgeUUID quarantineId = create_object(
+                    quarantineNameLength > 0 ? quarantineName.data() : "Suppressed Scenery",
+                    core::ObjectKind::staticInstance,
+                    {kStaticMapResourceClass, candidate.binding.parentTag, 0},
+                    quarantineTarget,
+                    {},
+                    candidate.binding);
+                compositionBound = compositionBound && !quarantineId.is_nil();
+            }
+            if (!compositionBound) {
+                lastGameplayModeMessage_ = "Forge could not bind the blank-world composition.";
+                lastLaunchMessage_ = lastGameplayModeMessage_;
+                report("placement_bind", "fail", target.id);
+                result.message = lastLaunchMessage_;
+                return result;
+            }
+            history_.clear();
+            queue_.clear();
+            (void)select(aggregateId);
+        }
+
+        std::array<runtime::custom_package_builder::MapPlacementEdit, kTowerEditCapacity> edits{};
+        std::size_t editCount = 0;
+        for (const project::scene::ForgeObject& object : scene_.objects()) {
+            if (!object.nativeMapBinding.has_value()) {
+                continue;
+            }
+            if (editCount == edits.size()) {
+                lastGameplayModeMessage_ = "The scene contains too many package placement edits.";
+                lastLaunchMessage_ = lastGameplayModeMessage_;
+                report("placement_bind", "overflow", target.id);
+                result.message = lastLaunchMessage_;
+                return result;
+            }
+            const std::uint32_t replacementParent =
+                object.resource.tagHash == object.nativeMapBinding->parentTag
+                    ? 0
+                    : object.resource.tagHash;
+            edits[editCount++] = {*object.nativeMapBinding, object.transform, replacementParent};
+        }
+        if (editCount == 0
+            || !runtime::baseplate_composition::arm(
+                std::span<const runtime::custom_package_builder::MapPlacementEdit>{edits}.first(
+                    editCount))) {
+            lastGameplayModeMessage_ =
+                "Izanami could not stage the source-validated Tower placement edits.";
             lastLaunchMessage_ = lastGameplayModeMessage_;
             report("package_stage", "fail", target.id);
             result.message = lastLaunchMessage_;
             return result;
         }
         runtime::baseplate_composition::disarm();
+        std::array<char, 768> message{};
+        const int written = std::snprintf(
+            message.data(),
+            message.size(),
+            "Staged the blank-world draft with %zu source-validated placements: one native "
+            "Tower-local surface candidate aligned to the courtyard arrival, one retained "
+            "skybox, and %zu suppressed Tower static scenery layers. Exactly 210 standalone "
+            "and 165 component-backed scenery entities were moved below the world and scaled "
+            "down. All 1,167 System and 21 Interactive owners were preserved, including all six "
+            "visibility bundles, 30 direct-Havok placements across base and activity packages, "
+            "16 entity models, and 15 model-Havok references. One clean StaticMap compressed-mesh "
+            "collision reference was substituted with a tiny same-package control mesh.",
+            editCount,
+            editCount > 2 ? editCount - 2 : 0);
         lastGameplayModeMessage_ =
-            "Generated and validated w64_pandora_0687_6.pkg.izanami-stage. The staged package "
-            "has not been installed or launched.";
+            written > 0 ? std::string(message.data(), static_cast<std::size_t>(written))
+                        : std::string{"Staged source-validated Tower placement edits."};
         lastLaunchMessage_ = lastGameplayModeMessage_;
         report("package_stage", "ok", target.id);
+        result.workspaceStarted = true;
         result.message = lastLaunchMessage_;
         return result;
     }
@@ -630,6 +874,69 @@ LaunchResult EditorWorkspace::launch_selected_template() {
     return {.workspaceStarted = true,
             .destinationTransitionStarted = launch.requested,
             .forcedDestinationArmed = !carrierControl,
+            .nativeActivityLaunchRequested = launch.requested,
+            .uiHidden = launch.uiHidden,
+            .message = lastLaunchMessage_};
+}
+
+/** Launches one exact installed scenario selected from Forge's catalog-backed Worlds browser. */
+LaunchResult EditorWorkspace::launch_scenario(std::string_view scenarioName) {
+    ResolvedDestinationTarget target{};
+    const bool validatedLayout = find_scenario_target(scenarioName, target);
+    if (!validatedLayout) {
+        target = {};
+        if (!write_target_name(target, scenarioName)) {
+            lastGameplayModeMessage_ = "That installed destination name cannot fit the native "
+                                       "activity-selection field.";
+            lastLaunchMessage_ = lastGameplayModeMessage_;
+            report("launch_catalog_scenario", "name_invalid", scenarioName);
+            return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                    .message = lastLaunchMessage_};
+        }
+        target.bubble = 0;
+        target.sliceSet = scenarioName == "city_tower_social_d2" ? 48U : 0U;
+        target.spawnSetHash = state::activity::forced::kAbsentSpawnSetHash;
+        target.hasSpawnSet = false;
+        target.fromCatalog = false;
+        report_baseplate_target("layout_pending_fallback", "ok", target);
+    }
+
+    runtime::baseplate_composition::disarm();
+    if (!arm_forced_destination(target)) {
+        lastGameplayModeMessage_ =
+            "The selected destination was found, but its forced-destination state could not be "
+            "published.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_catalog_scenario", "arm_fail", scenarioName);
+        return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                .message = lastLaunchMessage_};
+    }
+
+    const runtime::gameplay_editor_mode::NativeActivityLaunchResult launch =
+        runtime::gameplay_editor_mode::request_native_catalog_activity_launch();
+    std::array<char, 384> message{};
+    const int written = std::snprintf(
+        message.data(),
+        message.size(),
+        launch.requested
+            ? (validatedLayout
+                   ? "Queued %.*s through Destiny's native activity-session transition."
+                   : "Queued %.*s with the installed-name fallback while its bubble layout is "
+                     "still pending.")
+            : (launch.targetResolved
+                   ? "%.*s is armed, but Destiny is not currently in orbit."
+                   : "%.*s is armed, but this build's native activity-launch target is missing."),
+        static_cast<int>(scenarioName.size()),
+        scenarioName.data());
+    lastGameplayModeMessage_ = written > 0
+                                   ? std::string(message.data(), static_cast<std::size_t>(written))
+                                   : std::string{"Catalog destination armed."};
+    lastLaunchMessage_ = lastGameplayModeMessage_;
+    report(
+        "launch_catalog_scenario", launch.requested ? "ok" : "native_request_fail", scenarioName);
+    return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+            .destinationTransitionStarted = launch.requested,
+            .forcedDestinationArmed = true,
             .nativeActivityLaunchRequested = launch.requested,
             .uiHidden = launch.uiHidden,
             .message = lastLaunchMessage_};
@@ -783,26 +1090,28 @@ core::ForgeUUID EditorWorkspace::create_forge_object(std::string name) {
 }
 
 /** Creates one typed logical object through the command path. */
-core::ForgeUUID EditorWorkspace::create_object(std::string name,
-                                               core::ObjectKind kind,
-                                               core::ResourceId resource,
-                                               core::Transform transform,
-                                               core::ForgeUUID parent) {
+core::ForgeUUID
+EditorWorkspace::create_object(std::string name,
+                               core::ObjectKind kind,
+                               core::ResourceId resource,
+                               core::Transform transform,
+                               core::ForgeUUID parent,
+                               std::optional<core::NativeMapBinding> nativeMapBinding) {
+    if (nativeMapBinding.has_value() && !nativeMapBinding->is_valid()) {
+        return {};
+    }
     const core::ForgeUUID id = next_uuid();
     commands::Command command;
     command.kind = commands::CommandKind::createObject;
     command.object = id;
-    command.objectKind = kind;
-    command.resource = resource;
-    command.parent = parent;
-    command.editorName = std::move(name);
-    if (command.editorName.empty()) {
-        command.editorName = default_name_for_kind(kind);
+    if (transform.uniformScale <= 0.0F) {
+        transform.uniformScale = 1.0F;
     }
-    command.transform = transform;
-    if (command.transform.uniformScale <= 0.0F) {
-        command.transform.uniformScale = 1.0F;
-    }
+    project::scene::ForgeObject object = project::scene::make_object(id, kind, resource, transform);
+    object.parent = parent;
+    object.editorName = name.empty() ? default_name_for_kind(kind) : std::move(name);
+    object.nativeMapBinding = std::move(nativeMapBinding);
+    command.objectSnapshot = std::move(object);
     if (!apply(std::move(command))) {
         return {};
     }
@@ -819,7 +1128,7 @@ core::ForgeUUID EditorWorkspace::create_folder(std::string name) {
 /** Duplicates the selected logical object and selects the copy. */
 core::ForgeUUID EditorWorkspace::duplicate_selected() {
     const project::scene::ForgeObject* const source = selected_object();
-    if (source == nullptr) {
+    if (source == nullptr || source->nativeMapBinding.has_value()) {
         return {};
     }
 
@@ -1219,6 +1528,11 @@ void EditorWorkspace::apply_to_runtime(const commands::Command& command) {
 /** Attempts to create or mark the runtime binding for one authored object. */
 void EditorWorkspace::bind_runtime_object(const project::scene::ForgeObject& object,
                                           std::string_view reason) {
+    if (object.nativeMapBinding.has_value()) {
+        record_runtime(
+            object.id, "package_binding", runtime::RuntimeStatus::ok, {}, "staged_on_build");
+        return;
+    }
     runtime::SpawnResult spawn{};
     runtime::RuntimeStatus status = runtime::RuntimeStatus::unsupported;
     runtime::ForgeHandle handle{};
@@ -1280,6 +1594,11 @@ void EditorWorkspace::destroy_runtime_object(core::ForgeUUID id, std::string_vie
 /** Writes one authored transform to the live runtime when the object has a native handle. */
 void EditorWorkspace::transform_runtime_object(const project::scene::ForgeObject& object,
                                                std::string_view reason) {
+    if (object.nativeMapBinding.has_value()) {
+        record_runtime(
+            object.id, "package_transform", runtime::RuntimeStatus::ok, {}, "staged_on_build");
+        return;
+    }
     const ObjectRuntimeBinding* const binding = runtime_binding(object.id);
     if (binding == nullptr || !binding->handle.is_valid()) {
         record_runtime(

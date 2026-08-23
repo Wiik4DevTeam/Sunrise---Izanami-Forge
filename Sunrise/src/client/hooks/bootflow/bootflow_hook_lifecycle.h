@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace sunrise::client::hooks::bootflow {
 
 /**
@@ -28,5 +30,8 @@ void poll_world_step() noexcept;
 
 /** @return True while the fresh published boot-flow step is `setup:orbit`. */
 [[nodiscard]] bool in_orbit() noexcept;
+
+/** @return Destiny's current boot-flow step, or -1 when the accessor is unavailable. */
+[[nodiscard]] std::int32_t current_step() noexcept;
 
 } // namespace sunrise::client::hooks::bootflow

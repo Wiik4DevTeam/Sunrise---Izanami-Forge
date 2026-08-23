@@ -181,10 +181,32 @@ prepare_allocation(const request_selection::ActivityManagerSelectionResult& pars
     state::activity::defaults::ActivityDefaults defaults{};
     state::activity::defaults::snapshot(defaults);
     state::activity::defaults::apply_arrival_override(defaults, destination);
-    // Forced lands last and renames the captured descriptor in place without replacing the
-    // carrier's activity identity.
+    // Forced lands last and renames the captured descriptor in place. Orbit's index-only
+    // selection uses activity zero as a placeholder; forced catalog worlds need the bundled
+    // activity-20 carrier that historically advanced their native prologue.
     const bool forced = state::activity::forced::apply(destination);
     if (forced) {
+        const std::int16_t carrierActivity = defaults.defaultDestination.selection.activityIndex;
+        if (destination.activityIndex == 0 && carrierActivity > 0
+            && carrierActivity <= state::activity::destination::kMaximumActivityIndex) {
+            const std::int16_t sourceActivity = destination.activityIndex;
+            const bool rewritten =
+                state::activity::forced::rewrite_carrier_activity(destination, carrierActivity);
+            std::array<char, core::log::kLineCapacity> line{};
+            const int written = std::snprintf(
+                line.data(),
+                line.size(),
+                "ev=bap svc=6 stage=carrier_identity result=%s activity=%d->%d from_activity=%d",
+                rewritten ? "rewritten" : "failed",
+                static_cast<int>(sourceActivity),
+                static_cast<int>(carrierActivity),
+                static_cast<int>(destination.previousActivityIndex));
+            if (written > 0) {
+                core::log::write(core::log::Channel::server,
+                                 rewritten ? core::log::Level::info : core::log::Level::warn,
+                                 {line.data(), static_cast<std::size_t>(written)});
+            }
+        }
         report_forced(destination);
     } else if (!source.hasPackageName) {
         return state::activity::prepare_session(sessionId, allocation);
