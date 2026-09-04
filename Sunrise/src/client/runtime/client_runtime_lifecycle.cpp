@@ -1,12 +1,17 @@
 #include "../../core/logging/log.h"
+#include "../../core/settings/settings.h"
+#include "../content/activity/activity_sdk_generation_worker.h"
+#include "../content/activity/scriptable_catalog_worker.h"
 #include "../content/investment/worker.h"
 #include "../hooks/assert_handler/assert_handler_lifecycle.h"
+#include "../hooks/async_io/async_io_lifetime_guard.h"
 #include "../hooks/bitmap/bitmap_hook_lifecycle.h"
 #include "../hooks/bootflow/bootflow_hook_lifecycle.h"
 #include "../hooks/config_getter/config_getter_lifecycle.h"
 #include "../hooks/cursor/runtime.h"
 #include "../hooks/director/director_handoff.h"
 #include "../hooks/graphics/graphics_hook_lifecycle.h"
+#include "../hooks/inactivity/inactivity_override.h"
 #include "../hooks/infinite_ammo/infinite_ammo.h"
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
@@ -16,11 +21,14 @@
 #include "../hooks/retail_log/retail_log_lifecycle.h"
 #include "../hooks/spawn/spawn_runtime.h"
 #include "../hooks/teleport/runtime.h"
+#include "../hooks/world_objects/world_object_registry.h"
+#include "../inactivity/inactivity_settings_store.h"
 #include "../movement/movement_settings_store.h"
 #include "../player/player_settings_store.h"
 #include "../spawn/spawn_keybind_store.h"
 #include "../targets/game.h"
 #include "../targets/steam_targets.h"
+#include "../ui/activity/authored_placement_marker.h"
 #include "../ui/runtime/client_ui_module_runtime.h"
 #include "internal.h"
 #include "runtime.h"
@@ -29,10 +37,16 @@ namespace sunrise::client {
 
 /** Initializes Client-owned process state without installing hooks. */
 bool initialize(void* module) noexcept {
+    const core::settings::ActivitySdkGenerationSettings& generation =
+        core::settings::get().activitySdkGeneration;
+    content::activity::sdk_generation::initialize(module,
+                                                  {generation.enabled, generation.luaDeclarations});
     // Loaded before the pages register, so each page draws saved values on its first frame.
     movement::initialize(module);
     spawn::initialize(module);
     player::initialize(module);
+    inactivity::initialize(module);
+    ui::activity::authored_placement_marker::initialize(module);
     return ui::runtime::initialize();
 }
 
@@ -49,6 +63,13 @@ bool shutdown() noexcept {
     // Detached after presentation, so no later frame can apply the cursor policy.
     hooks::cursor::uninstall();
     hooks::polled_input::uninstall();
+    if (!hooks::world_objects::uninstall()) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::error,
+                         "ev=shutdown stage=world_objects result=fail");
+        ReleaseSRWLockExclusive(&runtime::g_lock);
+        return false;
+    }
     if (!hooks::network::uninstall()) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::error,
@@ -67,6 +88,7 @@ bool shutdown() noexcept {
     hooks::director::shutdown();
     hooks::bootflow::uninstall();
     hooks::infinite_ammo::uninstall();
+    hooks::inactivity::uninstall();
     hooks::noclip::uninstall();
     hooks::spawn::uninstall();
     hooks::teleport::uninstall();
@@ -86,7 +108,10 @@ bool shutdown() noexcept {
         ReleaseSRWLockExclusive(&runtime::g_lock);
         return false;
     }
+    content::activity::sdk_generation::reset();
+    content::activity::scriptables::reset();
     content::investment::worker::reset();
+    (void)hooks::async_io::uninstall();
     targets::steam::clear();
     if (runtime::g_platformModule != nullptr) {
         if (FreeLibrary(runtime::g_platformModule) == FALSE) {
@@ -105,8 +130,11 @@ bool shutdown() noexcept {
     runtime::g_graphicsStage = runtime::StageState::pending;
     runtime::g_platformStage = runtime::StageState::pending;
     ui::runtime::shutdown();
-    spawn::shutdown();
+    // The reverse of the order the stores initialize in.
+    ui::activity::authored_placement_marker::shutdown();
+    inactivity::shutdown();
     player::shutdown();
+    spawn::shutdown();
     movement::shutdown();
     core::log::write(core::log::Channel::client, core::log::Level::info, "ev=shutdown result=ok");
     ReleaseSRWLockExclusive(&runtime::g_lock);

@@ -202,16 +202,18 @@ bool apply(destination::DestinationSelection& selection) noexcept {
         selection.packageName[index] = static_cast<std::int8_t>(value.packageName[index]);
     }
     selection.packageNameLength = value.packageNameLength;
-    // A captured descriptor owns its carrier identity. With no descriptor, no activity index can
-    // be derived from a package name because several definitions can name the same package.
-    const bool hasCarrierDescriptor = selection.descriptorBitLength != 0;
-    if (!hasCarrierDescriptor) {
-        selection.reason = destination::kMinimumReason;
-        selection.previousActivityIndex = destination::kAbsentActivityIndex;
-        selection.activityIndex = destination::kAbsentActivityIndex;
-    }
+    // Many package names map to several definitions, so no index can be derived from a name: an
+    // operator who names one gets it. The from-side stays absent, because it feeds the requested
+    // and current-activity pushes and the client did ask from somewhere else.
+    selection.reason = destination::kMinimumReason;
+    selection.sourceActivityIndex = destination::kAbsentActivityIndex;
+    selection.activityIndex = value.hasActivityIndex
+                                  ? static_cast<std::int16_t>(value.activityIndex)
+                                  : destination::kAbsentActivityIndex;
     selection.elementIndex = destination::kAbsentElementIndex;
     selection.hasElementIndex = false;
+    selection.selectionNonce = 0;
+    selection.hasSelectionNonce = false;
     // The client named its arrival for the destination it picked, so both wire hashes go with it.
     selection.arrivalBubbleHash = 0;
     selection.hasArrivalBubbleHash = false;

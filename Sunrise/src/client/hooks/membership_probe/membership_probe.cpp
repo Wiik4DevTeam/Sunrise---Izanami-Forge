@@ -1,9 +1,7 @@
 /**
  * A read-only probe on the client's activity msg 12 handler.
- * Two runs of a public-target membership body ended on a black screen, and the two explanations
- * left standing contradict each other: the client either processed the body and its world
- * container still failed to bind, or it never processed it at all. The status word the handler
- * writes separates them, and nothing else in reach reports it.
+ * It reports the status word the handler writes. That word is the only thing in reach that
+ * separates "the client never processed the body" from "it did, and the bind still failed".
  */
 
 #include "membership_probe.h"
@@ -31,22 +29,21 @@ using patterns::signature;
 using patterns::signature_length;
 
 /**
- * `ActivityMsg12_ReplicateMembership_Recv` @ `0x7FF7421B7240`.
+ * `ActivityMsg12_ReplicateMembership_Recv`.
  * Its first argument is the ActivityClient. It commits the membership block at `+27696`, then
  * sets bit `0x100` of the status word at `+304` unconditionally, before returning 1.
  */
 constexpr std::string_view kReceiveText = "40 55 53 41 56 41 57 48 8D AC 24 ? ? ? ? B8 C8 96 05 00";
 constexpr auto kReceive = signature<signature_length(kReceiveText)>(kReceiveText);
 
-/** Status word the handler writes. `RE/25 "The +304 status word, mapped"` owns its bits. */
+/** Status word the handler writes, one bit per membership step. */
 constexpr std::size_t kStatusWordOffset = 304;
 /** Membership header. Its leading qword is the member key the client matches itself by. */
 constexpr std::size_t kMembershipHeaderOffset = 27696;
 /**
  * The two slot axes and the printable label the constructor builds from them.
- * Axis 1 is PRIVATE or PUBLIC, axis 2 is CURRENT or TARGET, and the slot map indexes them as
- * `axis1 + 2 * axis2`. A TARGET slot is index 2 or 3, which the public-first current-slot pick
- * never reads -- so the label says outright which readers can ever see this client.
+ * Axis 1 is PRIVATE or PUBLIC, axis 2 is CURRENT or TARGET, indexed as `axis1 + 2 * axis2`. A
+ * TARGET slot is index 2 or 3, which the public-first current-slot pick never reads.
  */
 constexpr std::size_t kSlotAxisOneOffset = 24;
 constexpr std::size_t kSlotAxisTwoOffset = 28;
@@ -79,23 +76,45 @@ constexpr std::size_t kPendingMaskOffset = 392856;
 constexpr std::size_t kPendingMaskSize = 1024;
 /** Set by a world-container bind to re-post a grant that arrived before the bind. */
 constexpr std::size_t kGrantDirtyOffset = 393880;
+/**
+ * Start of the host-state tail msg 12 writes after its 64 region records, header-relative.
+ * The tail holds the spawn byte and state, then the teleport state, token, slice-set index and
+ * name hash. Their field bases are not settled, so the window is dumped raw rather than indexed.
+ */
+constexpr std::size_t kHostTailOffset = 365064;
+/** Bytes of the tail to dump. Reaches past the name hash under either base. */
+constexpr std::size_t kHostTailSize = 48;
 /** How long after a message a client is still sampled. The bind lands well inside this. */
 constexpr std::uint64_t kSampleWindowMs = 30'000;
-/** Sampling cadence. The bind is a tick, not a timer, so this only has to be finer than the wait.
- */
+/** Sampling cadence. The bind is a tick, not a timer, so this only has to beat the wait. */
 constexpr std::uint64_t kSampleIntervalMs = 2'000;
 /** Clients the probe tracks at once. One private and one public target is the live shape. */
 constexpr std::size_t kTrackedCapacity = 4;
 
-using Receive = char(__fastcall*)(std::int64_t, std::int64_t, int);
+using Receive = char(__fastcall*)(const std::byte*, std::int64_t, int);
 
 /** One ActivityClient seen carrying a membership body, sampled until its window closes. */
 struct Tracked {
-    std::int64_t client{};
+    const std::byte* client{};
     std::uint64_t expiresAt{};
     std::uint64_t nextSample{};
     bool occupied{};
 };
+
+/**
+ * Reads one field out of the client.
+ * @param client ActivityClient.
+ * @param offset Byte offset of the field.
+ * @return The field's value.
+ */
+template <typename T> [[nodiscard]] T field(const std::byte* client, std::size_t offset) noexcept {
+    return *reinterpret_cast<const T*>(client + offset);
+}
+
+/** @param client ActivityClient. @return Its address, for a log line. */
+[[nodiscard]] unsigned long long address_of(const std::byte* client) noexcept {
+    return static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(client));
+}
 
 hooking::detour::Handle g_handle{};
 std::atomic_bool g_installed{false};
@@ -109,19 +128,18 @@ std::array<Tracked, kTrackedCapacity> g_tracked{};
  * @param before Status word before the call.
  * @param after Status word after it.
  */
-void report(std::int64_t client, std::uint16_t before, std::uint16_t after) noexcept {
+void report(const std::byte* client, std::uint16_t before, std::uint16_t after) noexcept {
     std::array<char, core::log::kLineCapacity> line{};
-    const std::uint64_t memberKey =
-        *reinterpret_cast<const std::uint64_t*>(client + kMembershipHeaderOffset);
-    const auto axisOne = *reinterpret_cast<const std::uint32_t*>(client + kSlotAxisOneOffset);
-    const auto axisTwo = *reinterpret_cast<const std::uint32_t*>(client + kSlotAxisTwoOffset);
+    const auto memberKey = field<std::uint64_t>(client, kMembershipHeaderOffset);
+    const auto axisOne = field<std::uint32_t>(client, kSlotAxisOneOffset);
+    const auto axisTwo = field<std::uint32_t>(client, kSlotAxisTwoOffset);
     const auto* label = reinterpret_cast<const char*>(client + kSlotLabelOffset);
     const int written = std::snprintf(line.data(),
                                       line.size(),
                                       "ev=probe stage=msg12 result=received client=0x%llX "
                                       "slot=%u label=%.*s member=0x%016llX "
                                       "status=0x%04X->0x%04X flag=%u",
-                                      static_cast<unsigned long long>(client),
+                                      address_of(client),
                                       axisOne + 2U * axisTwo,
                                       static_cast<int>(kSlotLabelCapacity),
                                       label,
@@ -138,23 +156,21 @@ void report(std::int64_t client, std::uint16_t before, std::uint16_t after) noex
 
 /**
  * Reports the four bind inputs the rebind reads, none of which needs a call.
- * A zero established id skips the slot silently, and a null roster container keeps the slot out
- * of the public-first pick, so between them they name which reader can ever see this client.
+ * A zero established id skips the slot silently. A null roster container keeps the slot out of
+ * the public-first pick. Between them they name which reader can ever see this client.
  * @param client ActivityClient.
  */
-void report_bind_inputs(std::int64_t client) noexcept {
+void report_bind_inputs(const std::byte* client) noexcept {
     std::array<char, core::log::kLineCapacity> line{};
-    const auto established =
-        *reinterpret_cast<const std::uint64_t*>(client + kEstablishedSessionOffset);
-    const auto slotRecord = *reinterpret_cast<const std::uint64_t*>(client + kSlotRecordOffset);
-    const auto rosterContainer =
-        *reinterpret_cast<const std::uint64_t*>(client + kRosterContainerOffset);
-    const auto receipt = *reinterpret_cast<const std::uint8_t*>(client + kBindReceiptOffset);
+    const auto established = field<std::uint64_t>(client, kEstablishedSessionOffset);
+    const auto slotRecord = field<std::uint64_t>(client, kSlotRecordOffset);
+    const auto rosterContainer = field<std::uint64_t>(client, kRosterContainerOffset);
+    const auto receipt = field<std::uint8_t>(client, kBindReceiptOffset);
     const int written = std::snprintf(line.data(),
                                       line.size(),
                                       "ev=probe stage=bind client=0x%llX established=0x%016llX "
                                       "slotrec=0x%llX roster=0x%llX receipt=%u",
-                                      static_cast<unsigned long long>(client),
+                                      address_of(client),
                                       static_cast<unsigned long long>(established),
                                       static_cast<unsigned long long>(slotRecord),
                                       static_cast<unsigned long long>(rosterContainer),
@@ -167,7 +183,7 @@ void report_bind_inputs(std::int64_t client) noexcept {
 }
 
 /** @param client ActivityClient. @return Entity-slot bits it holds but has not applied. */
-[[nodiscard]] std::size_t pending_slots(std::int64_t client) noexcept {
+[[nodiscard]] std::size_t pending_slots(const std::byte* client) noexcept {
     const auto* mask = reinterpret_cast<const std::uint8_t*>(client + kPendingMaskOffset);
     std::size_t count = 0;
     for (std::size_t index = 0; index < kPendingMaskSize; ++index) {
@@ -177,7 +193,7 @@ void report_bind_inputs(std::int64_t client) noexcept {
 }
 
 /** Opens or refreshes the sampling window for one client. */
-void track(std::int64_t client, std::uint64_t now) noexcept {
+void track(const std::byte* client, std::uint64_t now) noexcept {
     AcquireSRWLockExclusive(&g_lock);
     Tracked* free = nullptr;
     for (Tracked& entry : g_tracked) {
@@ -197,14 +213,17 @@ void track(std::int64_t client, std::uint64_t now) noexcept {
 }
 
 /** Reads the status word, defers to the original, then reads it again. */
-char __fastcall receive(std::int64_t client, std::int64_t body, int size) noexcept {
-    const auto* original = reinterpret_cast<Receive>(g_handle.original);
-    if (original == nullptr || client == 0) {
-        return original != nullptr ? original(client, body, size) : 0;
+char __fastcall receive(const std::byte* client, std::int64_t body, int size) noexcept {
+    auto* original = reinterpret_cast<Receive>(g_handle.original);
+    if (original == nullptr) {
+        return 0;
     }
-    const auto before = *reinterpret_cast<const std::uint16_t*>(client + kStatusWordOffset);
+    if (client == nullptr) {
+        return original(client, body, size);
+    }
+    const auto before = field<std::uint16_t>(client, kStatusWordOffset);
     const char result = original(client, body, size);
-    const auto after = *reinterpret_cast<const std::uint16_t*>(client + kStatusWordOffset);
+    const auto after = field<std::uint16_t>(client, kStatusWordOffset);
     report(client, before, after);
     report_bind_inputs(client);
     track(client, GetTickCount64());
@@ -212,23 +231,51 @@ char __fastcall receive(std::int64_t client, std::int64_t body, int size) noexce
 }
 
 /**
+ * Dumps the host-state tail the client decoded out of msg 12.
+ * The host arms a teleport there and the client's four-step machine reads it. Nothing else says
+ * whether the arm reached the client at all, and the field bases are not settled.
+ * @param client ActivityClient.
+ */
+void sample_host_tail(const std::byte* client) noexcept {
+    const std::byte* const tail =
+        client + kMembershipHeaderOffset + static_cast<std::ptrdiff_t>(kHostTailOffset);
+    std::array<char, core::log::kLineCapacity> line{};
+    int written = std::snprintf(
+        line.data(), line.size(), "ev=probe stage=hosttail client=0x%llX b=", address_of(client));
+    for (std::size_t index = 0; index < kHostTailSize && written > 0; ++index) {
+        const int step = std::snprintf(line.data() + written,
+                                       line.size() - static_cast<std::size_t>(written),
+                                       "%02X",
+                                       static_cast<unsigned>(std::to_integer<std::uint8_t>(
+                                           tail[static_cast<std::ptrdiff_t>(index)])));
+        written = step > 0 ? written + step : 0;
+    }
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
+/**
  * Reports what one client did with its grant after the message.
  * @param client ActivityClient.
  */
-void sample(std::int64_t client) noexcept {
+void sample(const std::byte* client) noexcept {
+    sample_host_tail(client);
     std::array<char, core::log::kLineCapacity> line{};
-    const auto status = *reinterpret_cast<const std::uint16_t*>(client + kStatusWordOffset);
-    const auto dirty = *reinterpret_cast<const std::uint8_t*>(client + kGrantDirtyOffset);
-    const int written = std::snprintf(
-        line.data(),
-        line.size(),
-        "ev=probe stage=grant client=0x%llX status=0x%04X "
-        "pending=%zu dirty=%u receipt=%u",
-        static_cast<unsigned long long>(client),
-        static_cast<unsigned>(status),
-        pending_slots(client),
-        static_cast<unsigned>(dirty),
-        static_cast<unsigned>(*reinterpret_cast<const std::uint8_t*>(client + kBindReceiptOffset)));
+    const auto status = field<std::uint16_t>(client, kStatusWordOffset);
+    const auto dirty = field<std::uint8_t>(client, kGrantDirtyOffset);
+    const int written =
+        std::snprintf(line.data(),
+                      line.size(),
+                      "ev=probe stage=grant client=0x%llX status=0x%04X "
+                      "pending=%zu dirty=%u receipt=%u",
+                      address_of(client),
+                      static_cast<unsigned>(status),
+                      pending_slots(client),
+                      static_cast<unsigned>(dirty),
+                      static_cast<unsigned>(field<std::uint8_t>(client, kBindReceiptOffset)));
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
@@ -278,7 +325,7 @@ void service(std::uint64_t now) noexcept {
     }
     // Copied under the lock, sampled outside it: a read walks 1024 bytes and must not hold a lock
     // the detour needs on the client's own thread.
-    std::array<std::int64_t, kTrackedCapacity> due{};
+    std::array<const std::byte*, kTrackedCapacity> due{};
     std::size_t count = 0;
     AcquireSRWLockExclusive(&g_lock);
     for (Tracked& entry : g_tracked) {

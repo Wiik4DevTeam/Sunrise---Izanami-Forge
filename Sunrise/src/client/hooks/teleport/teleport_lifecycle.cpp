@@ -73,20 +73,21 @@ template <typename T> [[nodiscard]] T original(std::size_t slot) noexcept {
 }
 
 /**
- * Publishes the forward vector and reads the bound key, then defers to the original.
+ * Publishes the camera pose and reads the bound key, then defers to the original.
  * @param playerIndex Player whose camera was transformed.
  * @return Whatever the original returns.
  */
 std::int64_t __fastcall camera_transform(std::uint32_t playerIndex) noexcept {
     const CameraTransform next = original<CameraTransform>(kCameraSlot);
     const std::int64_t result = next != nullptr ? next(playerIndex) : 0;
-    capture_forward(playerIndex);
+    capture_camera_pose(playerIndex);
     poll_request();
     force_pending();
     // Read here, not on the physics tick: that tick stops for a player who is standing still.
     hooks::fly::poll_toggle();
     client::player::position::poll();
     hooks::bootflow::poll_world_step();
+    hooks::bootflow::poll_current_slice_set();
     hooks::director::poll();
     izanami::runtime::baseplate_composition::poll();
     return result;

@@ -93,7 +93,7 @@ void report_forced(const state::activity::destination::DestinationSelection& for
                                       static_cast<int>(forced.packageNameLength),
                                       reinterpret_cast<const char*>(forced.packageName.data()),
                                       static_cast<int>(forced.activityIndex),
-                                      static_cast<int>(forced.previousActivityIndex),
+                                      static_cast<int>(forced.sourceActivityIndex),
                                       static_cast<int>(forced.reason),
                                       static_cast<unsigned>(forced.arrivalBubbleOverride),
                                       static_cast<unsigned>(forced.sliceSetOverride),
@@ -154,12 +154,14 @@ prepare_allocation(const request_selection::ActivityManagerSelectionResult& pars
     destination.packageName = source.packageName;
     destination.packageNameLength = source.packageNameLength;
     destination.reason = source.reason;
-    destination.previousActivityIndex = source.sourceActivityIndex;
+    destination.sourceActivityIndex = source.sourceActivityIndex;
     destination.activityIndex = source.activityIndex;
     destination.hasElementIndex = source.hasElementIndex;
     destination.elementIndex = source.hasElementIndex
                                    ? source.elementIndex
                                    : state::activity::destination::kAbsentElementIndex;
+    destination.hasSelectionNonce = source.hasSelectionNonce;
+    destination.selectionNonce = source.selectionNonce;
     destination.hasArrivalBubbleHash = source.hasArrivalBubbleHash;
     destination.arrivalBubbleHash = source.arrivalBubbleHash;
     destination.hasSpawnSetHash = source.hasSpawnSetHash;
@@ -200,7 +202,7 @@ prepare_allocation(const request_selection::ActivityManagerSelectionResult& pars
                 rewritten ? "rewritten" : "failed",
                 static_cast<int>(sourceActivity),
                 static_cast<int>(carrierActivity),
-                static_cast<int>(destination.previousActivityIndex));
+                static_cast<int>(destination.sourceActivityIndex));
             if (written > 0) {
                 core::log::write(core::log::Channel::server,
                                  rewritten ? core::log::Level::info : core::log::Level::warn,
@@ -228,8 +230,8 @@ bool encode_response(std::span<const std::byte> requestBody,
     middleware::bap::activity_host_manager::Request request;
     request_selection::ActivityManagerSelectionResult selection{};
     // Reading the destination out of the PUT is best effort. A malformed PUT must never cost the
-    // reply: the parser checks all 7,719 bytes, so one unsupported field would strand the activity
-    // route, and the client rejects any service-7 body that is not exactly 137 bytes.
+    // reply. The client rejects any service-7 body that is not exactly 137 bytes, so one
+    // unsupported field would otherwise strand the activity route.
     if (!middleware::bap::activity_host_manager::request::parse_request(requestBody, request)) {
         core::log::write(core::log::Channel::server,
                          core::log::Level::warn,

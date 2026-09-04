@@ -20,6 +20,7 @@ struct Outcome {
     /** A request prepares at most one State mutation; the alternative owns only that payload. */
     using Mutation = std::variant<std::monostate,
                                   state::PendingEquipmentSwap,
+                                  state::PendingSubclassSelection,
                                   state::PendingItemAcquisition,
                                   state::PendingProfileItemAcquisition,
                                   state::PendingItemDismantle,
@@ -65,6 +66,24 @@ void report_socket_plug_response(const middleware::web_service::Message& message
                                  std::uint8_t socketLane,
                                  std::uint16_t plugDefinitionIndex,
                                  std::span<const std::byte> response) noexcept;
+
+/** Records an opcode-801 reply after its exact subclass item-instance revision is known. */
+void report_subclass_selection_response(const middleware::web_service::Message& message,
+                                        std::int32_t family4Version,
+                                        const state::PendingSubclassSelection& mutation,
+                                        std::span<const std::byte> response) noexcept;
+
+/**
+ * Re-encodes a prepared reply as a refusal after its Queuez staging failed.
+ * The reply was already encoded as a success, and nothing is published now, so it must say so.
+ * @param message Parsed request whose correlation fields are echoed.
+ * @param response Svc-11 response-body storage owned by the caller.
+ * @param written Gets the encoded response-body size.
+ * @return True when the refusal fits.
+ */
+[[nodiscard]] bool encode_staging_refusal(const middleware::web_service::Message& message,
+                                          std::span<std::byte> response,
+                                          std::size_t& written) noexcept;
 
 /**
  * Answers one whole supported Web Service request body.

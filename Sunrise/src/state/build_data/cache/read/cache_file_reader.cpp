@@ -14,7 +14,8 @@ namespace {
     return counts.named != 0 && counts.items != 0 && counts.collectibles != 0
            && counts.materialRequirementSets != 0 && counts.socketPlugRules != 0
            && counts.socketPlugPools != 0 && counts.inventoryBuckets != 0
-           && counts.socketEntryLists != 0 && counts.progressions != 0 && counts.scenarios != 0;
+           && counts.socketEntryLists != 0 && counts.progressions != 0 && counts.scenarios != 0
+           && counts.rosterGroups != 0;
 }
 
 /** @return True when every count fits the output storage. */
@@ -74,13 +75,16 @@ namespace {
 }
 
 /**
- * Every format below the current one is out of date, so a version bump needs no edit here.
- * Listing them one by one left a bumped version unknown, and a valid old cache read as corrupt.
+ * A cache written by any other format is out of date, so a version bump needs no edit here.
+ * Listing them one by one left a bumped version unknown, and a valid cache read as corrupt.
+ * A newer file is another build's cache rather than a damaged one, so it rebuilds the same way.
+ * Reading it as corrupt instead failed the whole boot until the file was deleted by hand, which
+ * is what downgrading the module did.
  * @param version Cache prefix version.
- * @return True when the cache is older than the current format.
+ * @return True when the cache was not written by the current format.
  */
 [[nodiscard]] bool stale_format(std::uint32_t version) noexcept {
-    return version < records::kCacheFormatVersion;
+    return version != records::kCacheFormatVersion;
 }
 
 /** @return The pending status, or invalid when the file fails to close. */
@@ -148,9 +152,6 @@ LoadStatus load(const wchar_t* path,
     }
     if (stale_format(prefix.version)) {
         return close_with(file, LoadStatus::stale);
-    }
-    if (prefix.version != records::kCacheFormatVersion) {
-        return close_with(file, LoadStatus::invalid);
     }
 
     LARGE_INTEGER beginning{};

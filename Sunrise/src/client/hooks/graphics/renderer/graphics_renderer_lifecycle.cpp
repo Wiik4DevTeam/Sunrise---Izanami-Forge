@@ -8,10 +8,12 @@
 #include "../../../../core/ui/runtime/ui_visibility_runtime.h"
 #include "../../../../izanami/editor/ui/izanami_panel.h"
 #include "../../cursor/runtime.h"
+#include "../../inactivity/inactivity_override.h"
 #include "../../polled_input/runtime.h"
 #include "../input/input.h"
 #include "graphics_renderer_report.h"
 #include "state.h"
+#include "world_lines.h"
 
 namespace sunrise::client::hooks::graphics::renderer {
 namespace {
@@ -248,6 +250,7 @@ void release_render_target(Resources& resources) noexcept {
 
 /** @param resources SDK resources freed in an order that respects their dependencies. */
 void release_resources(Resources& resources) noexcept {
+    world_lines::release();
     release_render_target(resources);
     textures::release_logo_sheet(resources.logoSheet);
     release_com(resources.context);
@@ -316,11 +319,17 @@ void present(IDXGISwapChain* swapChain) noexcept {
     if (g_resources.swapChain == nullptr) {
         (void)initialize_locked(swapChain);
     }
+    bool framed = false;
     if (g_resources.swapChain == swapChain && fully_active_locked()) {
         render_frame_locked();
+        framed = true;
     }
     ReleaseSRWLockExclusive(&g_rendererLock);
 
+    if (framed) {
+        // The timeout hold enters game code, so it runs only after the renderer lock is gone.
+        inactivity::poll();
+    }
     // The cursor policy calls Win32, so it runs only after the renderer lock is gone.
     const bool coreVisible = core::ui::runtime::snapshot().visible;
     const bool forgeVisible = ::sunrise::izanami::editor::ui::standalone_visible();
