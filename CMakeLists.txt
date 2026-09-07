@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.31)
-project(Sunrise CXX)
+project(Sunrise C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,8 @@ file(GLOB_RECURSE VENDOR_SOURCES CONFIGURE_DEPENDS
     "Sunrise/vendor/detours/*.h"
     "Sunrise/vendor/imgui/*.cpp"
     "Sunrise/vendor/imgui/*.h"
+    "Sunrise/vendor/lua/*.c"
+    "Sunrise/vendor/lua/*.h"
 )
 file(GLOB_RECURSE RESOURCE_FILES CONFIGURE_DEPENDS
     "Sunrise/resources/*.rc"
@@ -52,6 +54,7 @@ target_include_directories(steam_api64 SYSTEM PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Sunrise/vendor/detours"
     "${CMAKE_CURRENT_SOURCE_DIR}/Sunrise/vendor/imgui"
     "${CMAKE_CURRENT_SOURCE_DIR}/Sunrise/vendor/imgui/backends"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Sunrise/vendor/lua"
 )
 
 if(DEFINED XWIN_DIR)

@@ -1,5 +1,7 @@
 #include "editor_workspace.h"
 
+#include <Windows.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -11,6 +13,7 @@
 
 #include "../../../core/logging/log.h"
 #include "../../../server/bap/encrypted/activity_host_manager/activity_host_manager_route.h"
+#include "../../../state/activity/carrier/activity_carrier.h"
 #include "../../../state/activity/forced/activity_forced_destination.h"
 #include "../../../state/build_data/runtime.h"
 #include "../../../state/build_data/scenarios/definition.h"
@@ -25,6 +28,9 @@ namespace {
 constexpr std::uint64_t kIzanamiUuidDomain = 0x495A414E414D4930ULL;
 constexpr std::string_view kTowerMapRoot = "map:city_tower_d2:root";
 constexpr std::string_view kPandoraMapRoot = "map:pandora:root";
+constexpr std::wstring_view kPandoraExperimentalPatch = L"packages\\w64_pandora_0687_6.pkg";
+constexpr std::wstring_view kPandoraIzanamiPatchMarker =
+    L"packages\\w64_pandora_0687_6.pkg.izanami-active";
 constexpr std::uint32_t kStaticMapResourceClass = 0x808071B3U;
 constexpr std::uint32_t kKnownTowerAggregateTable = 0x80ED22FBU;
 constexpr std::uint32_t kKnownTowerAggregateEntry = 0;
@@ -38,14 +44,28 @@ constexpr std::size_t kTowerCandidateCapacity = 256;
 constexpr std::size_t kTowerEditCapacity = 32;
 constexpr float kSuppressedStaticScale = 0.0001F;
 
-constexpr std::array<BaseplateTemplate, 7> kTemplates{{
+constexpr std::array<BaseplateTemplate, 8> kTemplates{{
     {"pandora_carrier_lab",
      "Pandora Functional Lab",
      "vfx_shade_test / Pandora",
      "bubble 0 / slice 0",
-     "Primary non-social package-research carrier. Its stock scenario is useful for reduction "
-     "work, but direct launch is blocked because the rewritten activity stalls during native "
-     "prologue loading. Run live spawn and collision experiments in a stable current world.",
+     "Primary non-social package-research world. It arms stock Pandora, then opens the Director "
+     "so a real non-social activity can supply a complete native carrier descriptor. This "
+     "discovery path does not use or modify Tower Carrier Control.",
+     "vfx_shade_test",
+     0,
+     0,
+     state::activity::forced::kAbsentSpawnSetHash,
+     true,
+     false,
+     false},
+    {"pandora_blank_baseplate",
+     "Blank Pandora Baseplate",
+     "vfx_shade_test / authored package",
+     "bubble 0 / slice 0",
+     "Experimental blank-world carrier. Its staged package keeps the proven Pandora sky, "
+     "repurposes three validated first-bubble aggregate slots as adjacent copies of the "
+     "six-mesh colliding baseplate, and suppresses every other placement in that map branch.",
      "vfx_shade_test",
      0,
      0,
@@ -86,8 +106,8 @@ constexpr std::array<BaseplateTemplate, 7> kTemplates{{
      "VFX Shade Test Baseplate",
      "vfx_shade_test",
      "bubble 0 / slice 0",
-     "Package reference retained for research. Direct launch is disabled because rewriting the "
-     "working Tower selection to this scenario stalls during native prologue loading.",
+     "Stock Pandora package reference. Launching arms the redirect and opens the Director to "
+     "capture a compatible non-social native carrier without routing through Tower.",
      "vfx_shade_test",
      0,
      0,
@@ -135,6 +155,15 @@ constexpr std::array<BaseplateTemplate, 7> kTemplates{{
      false,
      false},
 }};
+
+[[nodiscard]] bool pandora_experimental_patch_active() noexcept {
+    const DWORD attributes = GetFileAttributesW(kPandoraExperimentalPatch.data());
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        return false;
+    }
+    const DWORD marker = GetFileAttributesW(kPandoraIzanamiPatchMarker.data());
+    return marker == INVALID_FILE_ATTRIBUTES || (marker & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
 
 EditorWorkspace g_workspace;
 
@@ -417,7 +446,10 @@ void report_direct_launch_probe(const DirectLaunchProbe& probe) noexcept {
     }
 }
 
-[[nodiscard]] bool arm_forced_destination(const ResolvedDestinationTarget& resolved) noexcept {
+[[nodiscard]] bool arm_forced_destination(
+    const ResolvedDestinationTarget& resolved,
+    state::activity::forced::CarrierIdentityPolicy carrierIdentityPolicy =
+        state::activity::forced::CarrierIdentityPolicy::bundledFallback) noexcept {
     state::activity::forced::ForcedDestination forced{};
     const std::size_t length = (std::min)(resolved.packageNameLength, forced.packageName.size());
     std::copy_n(resolved.packageName.begin(), length, forced.packageName.begin());
@@ -428,6 +460,7 @@ void report_direct_launch_probe(const DirectLaunchProbe& probe) noexcept {
     forced.hasBubble = true;
     forced.hasSliceSet = true;
     forced.hasSpawnSetHash = resolved.hasSpawnSet;
+    forced.carrierIdentityPolicy = carrierIdentityPolicy;
     forced.enabled = true;
     const bool published = state::activity::forced::publish(forced);
     report_baseplate_target("arm", published ? "ok" : "fail", resolved);
@@ -617,7 +650,9 @@ LaunchResult EditorWorkspace::stage_selected_template_package() {
 
     selectedTemplate_ = templateIndex;
     const BaseplateTemplate& target = kTemplates[templateIndex];
-    if (target.id != std::string_view{"pandora_carrier_lab"}) {
+    const bool skyOnly = target.id == std::string_view{"pandora_carrier_lab"};
+    const bool blankBaseplate = target.id == std::string_view{"pandora_blank_baseplate"};
+    if (!skyOnly && !blankBaseplate) {
         lastGameplayModeMessage_ =
             "This carrier has no standalone package-stage experiment. Use its dedicated controls.";
         lastLaunchMessage_ = lastGameplayModeMessage_;
@@ -625,12 +660,28 @@ LaunchResult EditorWorkspace::stage_selected_template_package() {
         return {.message = lastLaunchMessage_};
     }
 
-    const bool staged = runtime::custom_package_builder::stage_map_root(kPandoraMapRoot);
-    lastGameplayModeMessage_ =
-        staged
-            ? "Pandora reduction draft validated and written with the .izanami-stage suffix. "
-              "It is not active game content until deliberately promoted while Destiny is closed."
-            : "Pandora reduction draft failed closed. Inspect izanami package-stage log events.";
+    const bool staged = blankBaseplate
+                            ? runtime::custom_package_builder::stage_pandora_baseplate_world(
+                                  kPandoraMapRoot)
+                            : runtime::custom_package_builder::stage_map_root(kPandoraMapRoot);
+    if (staged && blankBaseplate) {
+        lastGameplayModeMessage_ =
+            "Blank Pandora draft staged: one proven sky plus three adjacent copies of the "
+            "six-mesh baseplate. Close Destiny, promote it with tools/izanami-package-stage.ps1, "
+            "then launch Blank Pandora Baseplate.";
+    } else if (staged) {
+        lastGameplayModeMessage_ =
+            "Pandora's VFX branch was reduced to the source-validated sky collection linked by "
+            "table 0x8150E150 and written with .izanami-stage owner files. It is not active game "
+            "content until deliberately promoted while Destiny is closed.";
+    } else {
+        lastGameplayModeMessage_ =
+            blankBaseplate
+                ? "Blank Pandora draft failed closed. Inspect the pandora_blank_baseplate_plan "
+                  "package log event; no live package was changed."
+                : "Pandora's VFX sky-only draft failed closed. Inspect the pandora_sky_plan "
+                  "package log event; no live package was changed.";
+    }
     lastLaunchMessage_ = lastGameplayModeMessage_;
     report("package_stage", staged ? "ok" : "fail", target.id);
     return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
@@ -650,13 +701,14 @@ LaunchResult EditorWorkspace::launch_selected_template() {
     selectedTemplate_ = templateIndex;
     const BaseplateTemplate& target = kTemplates[templateIndex];
     const bool isolatedBaseplate = target.id == std::string_view{"blank_baseplate"};
-    if (target.id == std::string_view{"pandora_carrier_lab"}) {
+    const bool blankPandora = target.id == std::string_view{"pandora_blank_baseplate"};
+    const bool pandoraDiscovery = target.packageName == std::string_view{"vfx_shade_test"};
+    if (pandoraDiscovery && pandora_experimental_patch_active()) {
         lastGameplayModeMessage_ =
-            "Pandora direct launch is blocked: the activity session succeeds but Destiny stalls "
-            "during native prologue loading. Use Tower Carrier Control for live runtime tests, "
-            "or arm Pandora as an explicit redirect experiment.";
+            "Pandora launch is blocked because the non-stock w64_pandora_0687_6.pkg override is "
+            "active. Quarantine that experimental patch before launching the stock map.";
         lastLaunchMessage_ = lastGameplayModeMessage_;
-        report("launch_native", "blocked_prologue_stall", target.id);
+        report("launch_pandora_discovery", "experimental_patch_active", target.id);
         return {.message = lastLaunchMessage_};
     }
     if (isolatedBaseplate) {
@@ -824,6 +876,15 @@ LaunchResult EditorWorkspace::launch_selected_template() {
         result.message = lastLaunchMessage_;
         return result;
     }
+    if (blankPandora) {
+        const LaunchResult opened = open_selected_template();
+        LaunchResult direct = launch_scenario("pandora_freeroam");
+        direct.workspaceStarted = opened.workspaceStarted;
+        report("launch_blank_pandora_direct",
+               direct.nativeActivityLaunchRequested ? "ok" : "fail",
+               target.id);
+        return direct;
+    }
     LaunchResult result = open_selected_template();
     runtime::baseplate_composition::disarm();
     const bool carrierControl = target.id == std::string_view{"tower_carrier_control"};
@@ -849,6 +910,24 @@ LaunchResult EditorWorkspace::launch_selected_template() {
         report("launch_native", "fail", target.id);
         result.message = lastLaunchMessage_;
         return result;
+    }
+
+    if (pandoraDiscovery) {
+        const runtime::gameplay_editor_mode::NativeDirectorHandoffResult handoff =
+            runtime::gameplay_editor_mode::request_native_director_handoff();
+        lastGameplayModeMessage_ =
+            handoff.requested
+                ? "Stock Pandora is armed. Destiny's Director is opening; launch one private "
+                  "non-social activity to supply and record its complete native carrier."
+                : "Stock Pandora is armed, but the Director handoff failed. Open the Director "
+                  "manually and launch one private non-social activity.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_pandora_discovery", handoff.requested ? "ok" : "handoff_fail", target.id);
+        return {.workspaceStarted = true,
+                .forcedDestinationArmed = true,
+                .nativeDirectorHandoffRequested = handoff.requested,
+                .uiHidden = handoff.uiHidden,
+                .message = lastLaunchMessage_};
     }
 
     const runtime::gameplay_editor_mode::NativeActivityLaunchResult launch =
@@ -881,6 +960,18 @@ LaunchResult EditorWorkspace::launch_selected_template() {
 
 /** Launches one exact installed scenario selected from Forge's catalog-backed Worlds browser. */
 LaunchResult EditorWorkspace::launch_scenario(std::string_view scenarioName) {
+    const bool pandoraDiscovery = scenarioName == std::string_view{"vfx_shade_test"};
+    const bool pandoraNative = scenarioName == std::string_view{"pandora_freeroam"};
+    if ((pandoraDiscovery || pandoraNative) && pandora_experimental_patch_active()) {
+        lastGameplayModeMessage_ =
+            "Pandora launch is blocked because the non-stock w64_pandora_0687_6.pkg override is "
+            "active. Quarantine that experimental patch before launching the stock map.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_catalog_scenario", "experimental_patch_active", scenarioName);
+        return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                .message = lastLaunchMessage_};
+    }
+
     ResolvedDestinationTarget target{};
     const bool validatedLayout = find_scenario_target(scenarioName, target);
     if (!validatedLayout) {
@@ -902,13 +993,83 @@ LaunchResult EditorWorkspace::launch_scenario(std::string_view scenarioName) {
     }
 
     runtime::baseplate_composition::disarm();
-    if (!arm_forced_destination(target)) {
+    const auto carrierPolicy =
+        pandoraNative ? state::activity::forced::CarrierIdentityPolicy::preserveRequest
+                      : state::activity::forced::CarrierIdentityPolicy::bundledFallback;
+    if (!arm_forced_destination(target, carrierPolicy)) {
         lastGameplayModeMessage_ =
             "The selected destination was found, but its forced-destination state could not be "
             "published.";
         lastLaunchMessage_ = lastGameplayModeMessage_;
         report("launch_catalog_scenario", "arm_fail", scenarioName);
         return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                .message = lastLaunchMessage_};
+    }
+
+    if (pandoraDiscovery) {
+        const runtime::gameplay_editor_mode::NativeDirectorHandoffResult handoff =
+            runtime::gameplay_editor_mode::request_native_director_handoff();
+        lastGameplayModeMessage_ =
+            handoff.requested
+                ? "Stock Pandora is armed. Destiny's Director is opening; launch one private "
+                  "non-social activity to supply and record its complete native carrier."
+                : "Stock Pandora is armed, but the Director handoff failed. Open the Director "
+                  "manually and launch one private non-social activity.";
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_catalog_scenario",
+               handoff.requested ? "carrier_discovery" : "handoff_fail",
+               scenarioName);
+        return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                .forcedDestinationArmed = true,
+                .nativeDirectorHandoffRequested = handoff.requested,
+                .uiHidden = handoff.uiHidden,
+                .message = lastLaunchMessage_};
+    }
+
+    if (pandoraNative) {
+        state::activity::carrier::NativeCarrier carrier{};
+        if (!state::activity::carrier::snapshot(carrier)) {
+            state::activity::forced::clear();
+            lastGameplayModeMessage_ =
+                "Pandora direct launch is blocked because no non-social native carrier has been "
+                "captured for this Destiny build. Run VFX Shade Test Carrier Discovery first and "
+                "choose one private non-social activity in Destiny's Director. The captured "
+                "carrier survives a restart but is invalidated by a game executable change.";
+            lastLaunchMessage_ = lastGameplayModeMessage_;
+            report("launch_catalog_scenario", "carrier_missing", scenarioName);
+            return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                    .message = lastLaunchMessage_};
+        }
+        const runtime::gameplay_editor_mode::NativeActivityLaunchResult launch =
+            runtime::gameplay_editor_mode::request_native_activity_launch_with_carrier(
+                carrier.activityIndex);
+        std::array<char, 448> message{};
+        const int written = std::snprintf(
+            message.data(),
+            message.size(),
+            launch.requested
+                ? "Queued Pandora Freeroam with captured non-social carrier %.*s (activity %d) "
+                  "at native private-session setup. Tower and activity 0 are not used."
+                : (launch.targetResolved
+                       ? "Pandora Freeroam has captured carrier %.*s (activity %d), but Destiny "
+                         "is not currently in orbit."
+                       : "Pandora Freeroam has captured carrier %.*s (activity %d), but this "
+                         "build's native launch target is missing."),
+            static_cast<int>(carrier.packageNameLength),
+            carrier.packageName.data(),
+            static_cast<int>(carrier.activityIndex));
+        lastGameplayModeMessage_ =
+            written > 0 ? std::string(message.data(), static_cast<std::size_t>(written))
+                        : std::string{"Pandora carrier launch prepared."};
+        lastLaunchMessage_ = lastGameplayModeMessage_;
+        report("launch_catalog_scenario",
+               launch.requested ? "pandora_native_direct" : "native_request_fail",
+               scenarioName);
+        return {.workspaceStarted = sessionState_ == SessionState::activeWorkspace,
+                .destinationTransitionStarted = launch.requested,
+                .forcedDestinationArmed = true,
+                .nativeActivityLaunchRequested = launch.requested,
+                .uiHidden = launch.uiHidden,
                 .message = lastLaunchMessage_};
     }
 

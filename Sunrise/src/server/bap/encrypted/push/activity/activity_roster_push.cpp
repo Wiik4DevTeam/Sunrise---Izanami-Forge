@@ -286,10 +286,10 @@ bool append_roster_notification(
     const bool lifetimePending =
         hasScriptablePending && singleScriptableLink
         && scriptablePending.kind == server::activity::host::ScriptableOverrideKind::lifetime;
-    // The lifetime answers the client's reported load state. The published state shows the
-    // loading presentation and the spawn gate holds, until the client reports holding its region
-    // or while a region change waits for arrival. An explicit lifetime request wins.
-    const bool clientLoading = !client_in_world(session, refresh);
+    // Lifetime 4 holds the loading presentation. Release it when the region is instantiated;
+    // awaitClientSync keeps the spawn held until the independent world-arrival report.
+    // An explicit lifetime request still wins.
+    const bool clientLoading = !client_region_ready(session, refresh);
     const bool bodyPending = hasScriptablePending && singleScriptableLink && !lifetimePending;
     // Bodies committed behind the head share its push, so they are installed on this same body.
     std::array<server::activity::host::PendingScriptableOverride,

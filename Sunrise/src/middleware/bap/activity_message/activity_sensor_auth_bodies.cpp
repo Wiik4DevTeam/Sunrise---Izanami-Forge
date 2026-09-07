@@ -18,14 +18,7 @@ constexpr std::uint8_t kSlotTypeConfiguration = 8;
 constexpr std::uint8_t kSlotTypePackage = 16;
 constexpr std::uint8_t kSlotTypeQueues = 41;
 constexpr std::uint8_t kSlotTypeSpawnKeys = 67;
-/**
- * The one published slot this host still announces without a body.
- * A run measured every published width: 13 carries 224 bits, 16 carries 7, 17 carries 520, 18
- * carries 386, 35 carries 359, and 37 carries **zero**. Its 1750-bit width was recovered from the
- * client's own field tables alongside the type-35 and type-18 ones, and never written. The block
- * ships on every region -- the roster body is byte-identical at region 8, 112 and 144 -- so it is
- * in the stream while the player stands at the Wall of Wishes.
- */
+/** The map generator; its empty auth body still includes the schema's fixed arrays. */
 constexpr std::uint8_t kSlotTypeWideRecord = 37;
 /**
  * The slot the bubble-14 roster group brought in, and the second one found shipping bodyless.
@@ -51,15 +44,15 @@ constexpr std::size_t kSpawnKeyBits = 32 * 32 + 1 + 32;
  *
  * Slot 37 is schema `0x80805007` -> `0x80805008`, which holds two `0x8080500B` records and one
  * `0x80805009`. `0x8080500B` is 32 + 8 + `0x8080500F` (four groups of i8,i8,u32,bool = 196) + 7 + 1
- * + 32 + 32 + five biased i32 + `0x8080500D`; `0x80805009` is 32 + 8 + 8. `0x8080500D` is a 7-bit
- * COUNT followed by that many 16-bit elements, so **this body is variable width** -- a fixed number
- * cannot be right for it in general, and a zero count is the well-formed empty form.
+ * + 32 + 32 + five biased i32 + `0x8080500D`. With the dynamic arrays empty each is 475 bits.
  *
- * 2 x 475 + 48 = 998. An earlier note recorded 1750, which no whole element count produces
- * (23 gives 1734, 24 gives 1766); it was never verified on the wire the way the type-35 and
- * type-18 widths were, and it is not used.
+ * The final `0x80805009` contains a u32 plus `0x8080956C` and `0x8080954D`: fixed arrays of 32
+ *
+ * and 64 u8 elements. Their lengths apply even when the dynamic arrays are empty.
+ * Treating each
+ * fixed array as one byte truncates the body by 752 bits.
  */
-constexpr std::size_t kWideRecordBits = 998;
+constexpr std::size_t kWideRecordBits = 2 * 475 + 32 + 32 * 8 + 64 * 8;
 /**
  * Width of the type-30 body, from the client's field tables.
  * Slot 30 is schema `0x80809532`: a nested `0x80809C42` of {u32, 7-bit biased +1, 16-bit biased
@@ -281,10 +274,10 @@ std::size_t auth_body_bits_of(const Snapshot& snapshot,
  * Names each published slot type and the body width it goes out with, once per distinct pair.
  *
  * A slot whose width is zero is announced to the client and then described with nothing -- the
- * exact shape of the gap that types 35 and 18 had before their bodies were written. Types 21 and
- * 37 are admitted by `kRosterSlotTypes` and still fall through to `return 0` here, and type 37's
- * body was measured at 1750 bits and never implemented. Printing the pairs says which published
- * slots are actually bodyless on this destination instead of inferring it from the filter.
+ * exact shape of the gap that types 35 and 18 had before their bodies were written. Printing says
+ * which published
+ * slots are actually bodyless on this destination instead of inferring it from
+ * the filter.
  * @param slotType Slot type being sized.
  * @param bits Body width it will carry.
  */

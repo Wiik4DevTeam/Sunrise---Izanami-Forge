@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
-#include <unordered_set>
+#include <unordered_map>
 
 namespace sunrise::izanami::fate::recipe {
 namespace {
@@ -20,7 +20,8 @@ constexpr std::size_t kMaximumNameBytes = 160;
 int g_moduleAnchor{};
 
 [[nodiscard]] bool valid_actor(const ActorInstruction& actor) noexcept {
-    return actor.editorId != 0 && actor.parentId != actor.editorId && actor.tag != 0
+    return actor.editorId != 0 && actor.parentId != actor.editorId
+           && (actor.virtualGroup ? actor.tag == 0 && actor.objectType == 0 : actor.tag != 0)
            && actor.name.size() <= kMaximumNameBytes && actor.transform.is_finite()
            && actor.transform.uniformScale > 0.0F;
 }
@@ -40,34 +41,37 @@ int g_moduleAnchor{};
         || recipe.actors.size() > kMaximumActors) {
         return false;
     }
-    std::unordered_set<std::uint64_t> ids;
+    std::unordered_map<std::uint64_t, std::size_t> ids;
     ids.reserve(recipe.actors.size());
-    for (const ActorInstruction& actor : recipe.actors) {
-        if (!valid_actor(actor) || !ids.insert(actor.editorId).second) {
+    for (std::size_t index = 0; index < recipe.actors.size(); ++index) {
+        const ActorInstruction& actor = recipe.actors[index];
+        if (!valid_actor(actor) || !ids.emplace(actor.editorId, index).second) {
             return false;
         }
     }
+    // Walk each parent edge at most twice; grey nodes detect cycles without recursive depth limits.
+    std::vector<std::uint8_t> colors(recipe.actors.size());
     for (const ActorInstruction& actor : recipe.actors) {
-        if (actor.parentId != 0 && !ids.contains(actor.parentId)) {
-            return false;
-        }
-        std::uint64_t parent = actor.parentId;
-        for (std::size_t depth = 0; parent != 0 && depth <= recipe.actors.size(); ++depth) {
-            if (parent == actor.editorId) {
+        std::uint64_t current = actor.editorId;
+        while (current != 0) {
+            const auto found = ids.find(current);
+            if (found == ids.end() || colors[found->second] == 1) {
                 return false;
             }
-            const auto found = std::find_if(recipe.actors.begin(),
-                                            recipe.actors.end(),
-                                            [parent](const ActorInstruction& candidate) {
-                                                return candidate.editorId == parent;
-                                            });
-            if (found == recipe.actors.end()) {
-                return false;
+            if (colors[found->second] == 2) {
+                break;
             }
-            parent = found->parentId;
+            colors[found->second] = 1;
+            current = recipe.actors[found->second].parentId;
         }
-        if (parent != 0) {
-            return false;
+        current = actor.editorId;
+        while (current != 0) {
+            const std::size_t index = ids.at(current);
+            if (colors[index] == 2) {
+                break;
+            }
+            colors[index] = 2;
+            current = recipe.actors[index].parentId;
         }
     }
     return true;
@@ -121,8 +125,11 @@ IoResult save(std::wstring_view path,
             return result;
         }
         const std::filesystem::path filePath{path};
-        std::filesystem::create_directories(filePath.parent_path());
-        std::ofstream stream(filePath, std::ios::binary | std::ios::trunc);
+        if (!filePath.parent_path().empty()) {
+            std::filesystem::create_directories(filePath.parent_path());
+        }
+        const std::filesystem::path temporary = filePath.wstring() + L".tmp";
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
         if (!stream) {
             result.message = "Quick-save recipe could not be opened for writing.";
             return result;
@@ -131,16 +138,24 @@ IoResult save(std::wstring_view path,
         stream << "scene " << std::quoted(recipe.name) << '\n';
         stream << std::setprecision(std::numeric_limits<float>::max_digits10);
         for (const ActorInstruction& actor : recipe.actors) {
-            stream << "actor " << actor.editorId << ' ' << actor.parentId << ' '
-                   << std::quoted(actor.name) << ' ' << std::hex << std::uppercase << actor.tag
-                   << std::dec << ' ' << static_cast<unsigned>(actor.objectType) << ' '
+            stream << (actor.virtualGroup ? "group " : "actor ") << actor.editorId << ' '
+                   << actor.parentId << ' ' << std::quoted(actor.name) << ' ' << std::hex
+                   << std::uppercase << actor.tag << std::dec << ' '
+                   << static_cast<unsigned>(actor.objectType) << ' '
                    << actor.transform.translation.x << ' ' << actor.transform.translation.y << ' '
                    << actor.transform.translation.z << ' ' << actor.transform.rotation.x << ' '
                    << actor.transform.rotation.y << ' ' << actor.transform.rotation.z << ' '
                    << actor.transform.rotation.w << ' ' << actor.transform.uniformScale << '\n';
         }
         stream.flush();
-        if (!stream) {
+        stream.close();
+        if (!stream
+            || MoveFileExW(temporary.c_str(),
+                           filePath.c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+                   == FALSE) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
             result.message = "Quick-save recipe write did not complete.";
             return result;
         }
@@ -165,7 +180,8 @@ IoResult load(std::wstring_view path, MapRecipe& output) noexcept {
         }
         std::string magic;
         std::uint32_t version = 0;
-        if (!(stream >> magic >> version) || magic != kMagic || version != kFormatVersion) {
+        if (!(stream >> magic >> version) || magic != kMagic
+            || (version != 1 && version != kFormatVersion)) {
             result.message = "Quick-save recipe has an unsupported header.";
             return result;
         }
@@ -176,12 +192,14 @@ IoResult load(std::wstring_view path, MapRecipe& output) noexcept {
             return result;
         }
         while (stream >> keyword) {
-            if (keyword != "actor" || output.actors.size() >= kMaximumActors) {
+            const bool isGroup = version >= 2 && keyword == "group";
+            if ((keyword != "actor" && !isGroup) || output.actors.size() >= kMaximumActors) {
                 result.message = "Quick-save recipe contains an invalid instruction.";
                 output = {};
                 return result;
             }
             ActorInstruction actor{};
+            actor.virtualGroup = isGroup;
             unsigned type = 0;
             if (!(stream >> actor.editorId >> actor.parentId >> std::quoted(actor.name) >> std::hex
                   >> actor.tag >> std::dec >> type >> actor.transform.translation.x

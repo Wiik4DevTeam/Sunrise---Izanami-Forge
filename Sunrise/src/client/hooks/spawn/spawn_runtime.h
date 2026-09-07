@@ -24,6 +24,7 @@ enum class SpawnOutcome : std::uint8_t {
     playerUnavailable,
     surfaceMiss,
     factoryRejected,
+    timedOut,
 };
 
 struct Settings {
@@ -59,6 +60,13 @@ struct RaycastProbe {
     bool hit{};
 };
 
+struct TransformRequest {
+    std::uint32_t handle{0xFFFFFFFFU};
+    std::array<float, 3> position{};
+    std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};
+    float scale{1.0F};
+};
+
 struct WorldObjectDefinition {
     std::uint32_t tag{};
     std::uint8_t objectType{};
@@ -75,12 +83,17 @@ struct WorldObjectObservation {
     std::uint32_t tag{};
     std::uint8_t objectType{};
     WorldObjectIdentity identity{WorldObjectIdentity::definitionTag};
+    std::array<float, 3> position{};
+    std::array<float, 4> rotation{0.0F, 0.0F, 0.0F, 1.0F};
+    float scale{1.0F};
+    bool transformKnown{};
 };
 
 struct WorldObjectScan {
     std::size_t slotsScanned{};
     std::size_t liveHandles{};
     std::size_t matchedObjects{};
+    std::size_t observedTransforms{};
     std::size_t ambiguousObjects{};
     std::size_t unstableObjects{};
 };
@@ -127,6 +140,9 @@ request(std::uint32_t tag, Origin origin, std::uint32_t amount, const Settings& 
                                      const std::array<float, 3>& position,
                                      const std::array<float, 4>& rotation,
                                      float scale) noexcept;
+
+/** Accepts an entire batch or none. Acceptance queues work; native execution happens later. */
+[[nodiscard]] bool request_transforms(std::span<const TransformRequest> requests) noexcept;
 
 [[nodiscard]] bool request_line(std::span<const std::uint32_t> tags,
                                 Origin origin,

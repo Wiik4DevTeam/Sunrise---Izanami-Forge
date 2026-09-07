@@ -29,6 +29,8 @@
 #include "../../../middleware/content/packages/reader/reader.h"
 #include "../../../middleware/content/packages/tables/scenario_reader.h"
 #include "../../../state/build_data/runtime.h"
+#include "../../fate/authored_map_recipe.h"
+#include "../../fate/group_recipe.h"
 #include "../../fate/map_recipe.h"
 #include "../../research/native_object_types.h"
 #include "../../runtime/custom_package_builder.h"
@@ -46,6 +48,8 @@ namespace teleport = sunrise::client::hooks::teleport;
 namespace movement = sunrise::client::movement;
 namespace package_reader = sunrise::middleware::content::packages::reader;
 namespace recipe = sunrise::izanami::fate::recipe;
+namespace authored_recipe = sunrise::izanami::fate::authored_map_recipe;
+namespace group_recipe = sunrise::izanami::fate::group_recipe;
 namespace research = sunrise::izanami::research;
 namespace workspace = sunrise::izanami::editor::workspace;
 
@@ -54,10 +58,13 @@ constexpr std::uint32_t kFieldProvenChandelierTag = 0x80B6C246U;
 constexpr std::uint32_t kInvalidHandle = 0xFFFFFFFFU;
 constexpr float kQuarantineDepth = 10000.0F;
 constexpr float kQuarantineScale = 0.0001F;
+constexpr float kAuthoredHideDepth = 10000.0F;
+constexpr float kAuthoredHideScale = 0.0001F;
 constexpr char kAssetPayload[] = "IZANAMI_ASSET_TAG";
+constexpr char kGroupAssetPayload[] = "IZANAMI_GROUP_ASSET";
 constexpr char kActorPayload[] = "IZANAMI_TRACKED_ACTOR";
 constexpr char kNativeDeleteBlocker[] =
-    "Experimental remove: Forge objects are undoable; supported map objects restore on reload";
+    "Delete Forge and live-bound map objects immediately; unbound authored rows hide on reload";
 constexpr float kTopBarHeight = 44.0F;
 constexpr float kRibbonHeight = 60.0F;
 constexpr float kOutputHeight = 72.0F;
@@ -69,7 +76,8 @@ constexpr float kRightPanelMinimumWidth = 230.0F;
 constexpr float kRightPanelMaximumWidth = 340.0F;
 constexpr std::uint64_t kMapActorIdMask = 0x8000000000000000ULL;
 constexpr std::uint64_t kAuthoredActorIdMask = 0x4000000000000000ULL;
-constexpr std::size_t kAuthoredPlacementCapacity = 4096;
+constexpr std::uint64_t kAuthoredChildActorIdMask = 0x6000000000000000ULL;
+constexpr std::size_t kAuthoredPlacementCapacity = 32768;
 constexpr std::size_t kEntityObjectTypeOffset = 0x96;
 constexpr std::size_t kCatalogReadsPerFrame = 32;
 constexpr std::size_t kResidencyChecksPerFrame = 256;
@@ -125,6 +133,7 @@ enum class Icon : std::uint8_t {
     undo,
     redo,
     duplicate,
+    group,
     remove,
     refresh,
     probe,
@@ -161,12 +170,28 @@ struct TrackedActor {
     std::uint32_t tableTag{};
     std::uint32_t entryIndex{};
     std::uint32_t parentTag{};
+    std::uint32_t resourceClass{};
+    std::uint32_t resourceTag{};
+    std::uint32_t dataTag{};
+    std::uint32_t authoredEntityTag{};
+    std::uint64_t authoredWorldId{};
+    std::uint32_t groupIndex{runtime::custom_package_builder::kNoAuthoredPlacementParent};
+    std::uint32_t transformIndex{runtime::custom_package_builder::kNoAuthoredPlacementParent};
+    std::size_t authoredDataBytes{};
     std::uint8_t objectType{};
     core::Transform transform{};
+    core::Transform authoredSourceTransform{};
     ActorSource source{ActorSource::forge};
+    runtime::custom_package_builder::AuthoredPlacementKind authoredKind{
+        runtime::custom_package_builder::AuthoredPlacementKind::resource};
     native_spawn::WorldObjectIdentity identity{native_spawn::WorldObjectIdentity::definitionTag};
     bool transformKnown{true};
+    bool authoredObjectTypeKnown{};
+    bool authoredStageEditable{};
+    bool authoredLiveBound{};
+    bool authoredHidden{};
     bool nativeExpired{};
+    bool virtualGroup{};
 };
 
 struct SpawnCommand {
@@ -178,6 +203,7 @@ struct SpawnCommand {
     core::Transform transform{};
     bool absolute{};
     bool additiveSelection{};
+    std::uint64_t selectionOnCompletion{};
 };
 
 struct TransformEdit {
@@ -233,6 +259,7 @@ struct ShellState {
     bool worldCatalogReady{};
     bool worldCatalogValidated{};
     std::vector<asset_metadata::Entry> assetMetadata{};
+    std::vector<group_recipe::GroupAsset> groupAssets{};
     std::array<std::size_t, 256> typeCounts{};
     package_reader::ScanResult scan{};
     std::unique_ptr<package_reader::Scratch> catalogScratch{};
@@ -247,6 +274,7 @@ struct ShellState {
     bool catalogMetadataComplete{};
     bool catalogResidencyExpanded{};
     bool assetMetadataLoaded{};
+    bool groupAssetsLoaded{};
     std::uint32_t assetContextTag{};
     char assetContextName[97]{};
     std::array<float, 3> assetContextColor{};
@@ -254,6 +282,11 @@ struct ShellState {
     std::vector<TrackedActor> actors{};
     std::vector<TrackedActor> quarantinedActors{};
     native_spawn::WorldObjectScan worldScan{};
+    runtime::custom_package_builder::AuthoredPlacementStats authoredScan{};
+    std::size_t pendingAuthoredEdits{};
+    std::size_t staleAuthoredEdits{};
+    std::size_t liveEditableMapObjects{};
+    std::size_t liveBoundAuthoredObjects{};
     bool worldObjectsScanned{};
     std::vector<SpawnCommand> spawnQueue{};
     std::vector<TransformEdit> undo{};
@@ -264,6 +297,8 @@ struct ShellState {
     std::uint64_t selectionAnchorId{};
     std::vector<std::uint64_t> selectedActorIds{};
     std::uint32_t selectedAssetTag{};
+    std::size_t selectedGroupAsset{(std::numeric_limits<std::size_t>::max)()};
+    char groupAssetName[160]{"Combined Asset"};
     std::uint64_t submittedSequence{};
     bool spawnInFlight{};
     native_spawn::RaycastProbe probe{};
@@ -279,6 +314,19 @@ std::atomic_bool g_worldRefreshRequested{true};
     static ShellState value;
     return value;
 }
+
+[[nodiscard]] bool same_transform(const core::Transform& left,
+                                  const core::Transform& right) noexcept;
+[[nodiscard]] bool authored_row_editable(const TrackedActor& actor) noexcept;
+[[nodiscard]] bool authored_transform_editable(const TrackedActor& actor) noexcept;
+[[nodiscard]] bool authored_edit_pending(const TrackedActor& actor) noexcept;
+void apply_saved_authored_edits(ShellState& shell, std::vector<TrackedActor>& actors);
+void summarize_live_map_objects(ShellState& shell, const std::vector<TrackedActor>& actors);
+[[nodiscard]] bool persist_authored_edits(ShellState& shell);
+bool write_actor_transform(ShellState& shell,
+                           TrackedActor& actor,
+                           const core::Transform& transform,
+                           bool recordHistory);
 
 template <typename... Arguments>
 void set_status(ShellState& shell, const char* format, Arguments... arguments) noexcept {
@@ -314,18 +362,24 @@ world_map_root(const state::build_data::scenarios::Definition& definition) {
     if (name == "city_tower_social_d2") {
         return 0;
     }
-    if (name == "vfx_shade_test") {
+    if (name == "pandora_freeroam") {
         return 1;
     }
-    return 2;
+    if (name == "vfx_shade_test") {
+        return 2;
+    }
+    return 3;
 }
 
 [[nodiscard]] std::string_view world_display_name(std::string_view name) noexcept {
     if (name == "city_tower_social_d2") {
         return "Tower (Normal D2)";
     }
+    if (name == "pandora_freeroam") {
+        return "Pandora Freeroam (Native Direct Probe)";
+    }
     if (name == "vfx_shade_test") {
-        return "VFX Shade Test Map";
+        return "VFX Shade Test (Carrier Discovery)";
     }
     return name;
 }
@@ -359,7 +413,7 @@ bool collect_named_world(void* context,
     world.patchIndex = entry.patchIndex;
     if (name == "city_tower_social_d2") {
         world.mapRoot = "map:city_tower_d2:root";
-    } else if (name == "vfx_shade_test") {
+    } else if (name == "vfx_shade_test" || name.starts_with("pandora_")) {
         world.mapRoot = "map:pandora:root";
     }
     shell.worlds.push_back(std::move(world));
@@ -827,6 +881,7 @@ void add_actor_selection(ShellState& shell, std::uint64_t id) {
     }
     shell.selectedActorId = id;
     shell.selectedAssetTag = 0;
+    shell.selectedGroupAsset = (std::numeric_limits<std::size_t>::max)();
 }
 
 void select_only_actor(ShellState& shell, std::uint64_t id) {
@@ -847,6 +902,280 @@ void prune_actor_selection(ShellState& shell) {
     if (find_actor(shell, shell.selectionAnchorId) == nullptr) {
         shell.selectionAnchorId = shell.selectedActorId;
     }
+}
+
+[[nodiscard]] core::Quat multiply_quaternion(const core::Quat& left,
+                                             const core::Quat& right) noexcept {
+    return {left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+            left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+            left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+            left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z};
+}
+
+[[nodiscard]] core::Quat normalized_quaternion(core::Quat value) noexcept {
+    const float length =
+        std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w);
+    if (!std::isfinite(length) || length < 0.00001F) {
+        return {};
+    }
+    value.x /= length;
+    value.y /= length;
+    value.z /= length;
+    value.w /= length;
+    return value;
+}
+
+[[nodiscard]] core::Quat inverse_quaternion(const core::Quat& value) noexcept {
+    const core::Quat normalized = normalized_quaternion(value);
+    return {-normalized.x, -normalized.y, -normalized.z, normalized.w};
+}
+
+[[nodiscard]] core::Vec3 rotate_point(const core::Quat& rotation,
+                                      const core::Vec3& point) noexcept {
+    const core::Quat vector{point.x, point.y, point.z, 0.0F};
+    const core::Quat result = multiply_quaternion(
+        multiply_quaternion(normalized_quaternion(rotation), vector), inverse_quaternion(rotation));
+    return {result.x, result.y, result.z};
+}
+
+[[nodiscard]] bool actor_descends_from(const ShellState& shell,
+                                       const TrackedActor& actor,
+                                       std::uint64_t parentId) noexcept {
+    std::uint64_t current = actor.parentId;
+    for (std::size_t depth = 0; current != 0 && depth <= shell.actors.size(); ++depth) {
+        if (current == parentId) {
+            return true;
+        }
+        const TrackedActor* const parent = find_actor(shell, current);
+        current = parent == nullptr ? 0 : parent->parentId;
+    }
+    return false;
+}
+
+[[nodiscard]] std::vector<std::uint64_t> group_member_ids(const ShellState& shell,
+                                                          std::uint64_t groupId) {
+    std::vector<std::uint64_t> result;
+    for (const TrackedActor& actor : shell.actors) {
+        if (actor.editorId != groupId && actor_descends_from(shell, actor, groupId)) {
+            result.push_back(actor.editorId);
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] bool can_group_selection(const ShellState& shell) noexcept {
+    return shell.selectedActorIds.size() >= 2
+           && std::all_of(shell.selectedActorIds.begin(),
+                          shell.selectedActorIds.end(),
+                          [&shell](std::uint64_t id) {
+                              const TrackedActor* const actor = find_actor(shell, id);
+                              return actor != nullptr && actor->source == ActorSource::forge
+                                     && actor->transformKnown && !actor->nativeExpired;
+                          });
+}
+
+[[nodiscard]] bool can_save_group_asset(const ShellState& shell) noexcept {
+    if (const TrackedActor* const actor = find_actor(shell, shell.selectedActorId);
+        actor != nullptr && actor->virtualGroup) {
+        return std::any_of(shell.actors.begin(), shell.actors.end(), [&](const auto& row) {
+            return !row.virtualGroup && actor_descends_from(shell, row, actor->editorId);
+        });
+    }
+    return shell.selectedActorIds.size() >= 2
+           && std::all_of(shell.selectedActorIds.begin(),
+                          shell.selectedActorIds.end(),
+                          [&shell](std::uint64_t id) {
+                              const TrackedActor* const actor = find_actor(shell, id);
+                              return actor != nullptr && !actor->virtualGroup
+                                     && actor->source == ActorSource::forge && actor->transformKnown
+                                     && !actor->nativeExpired;
+                          });
+}
+
+void group_selected_actors(ShellState& shell) {
+    if (!can_group_selection(shell)) {
+        set_status(shell, "Group requires at least two live Forge objects with known transforms.");
+        return;
+    }
+    core::Vec3 pivot{};
+    for (const std::uint64_t id : shell.selectedActorIds) {
+        const TrackedActor* const actor = find_actor(shell, id);
+        pivot.x += actor->transform.translation.x;
+        pivot.y += actor->transform.translation.y;
+        pivot.z += actor->transform.translation.z;
+    }
+    const float count = static_cast<float>(shell.selectedActorIds.size());
+    pivot.x /= count;
+    pivot.y /= count;
+    pivot.z /= count;
+
+    TrackedActor group{};
+    group.editorId = shell.nextActorId++;
+    group.name = "Group " + std::to_string(group.editorId);
+    group.transform.translation = pivot;
+    group.source = ActorSource::forge;
+    group.virtualGroup = true;
+    const std::uint64_t groupId = group.editorId;
+    shell.actors.push_back(std::move(group));
+    for (const std::uint64_t id : shell.selectedActorIds) {
+        if (TrackedActor* const actor = find_actor(shell, id); actor != nullptr) {
+            actor->parentId = groupId;
+        }
+    }
+    select_only_actor(shell, groupId);
+    set_status(shell, "Grouped %.0f objects under a transformable editor root.", count);
+}
+
+void refresh_group_assets(ShellState& shell) {
+    const recipe::IoResult result = group_recipe::load_all(shell.groupAssets);
+    shell.groupAssetsLoaded = result.succeeded;
+    if (!result.succeeded) {
+        set_status(shell, "%s", result.message.c_str());
+    }
+    if (shell.selectedGroupAsset >= shell.groupAssets.size()) {
+        shell.selectedGroupAsset = (std::numeric_limits<std::size_t>::max)();
+    }
+}
+
+[[nodiscard]] std::vector<const TrackedActor*> actors_for_group_asset(const ShellState& shell,
+                                                                      const TrackedActor*& root) {
+    root = nullptr;
+    std::vector<const TrackedActor*> actors;
+    if (const TrackedActor* const selected = find_actor(shell, shell.selectedActorId);
+        selected != nullptr && selected->virtualGroup) {
+        root = selected;
+        for (const TrackedActor& actor : shell.actors) {
+            if (!actor.virtualGroup && actor.source == ActorSource::forge && actor.transformKnown
+                && !actor.nativeExpired && actor_descends_from(shell, actor, selected->editorId)) {
+                actors.push_back(&actor);
+            }
+        }
+        return actors;
+    }
+    for (const std::uint64_t id : shell.selectedActorIds) {
+        const TrackedActor* const actor = find_actor(shell, id);
+        if (actor != nullptr && !actor->virtualGroup && actor->source == ActorSource::forge
+            && actor->transformKnown && !actor->nativeExpired) {
+            actors.push_back(actor);
+        }
+    }
+    return actors;
+}
+
+void save_selected_group_asset(ShellState& shell) {
+    const TrackedActor* root = nullptr;
+    const std::vector<const TrackedActor*> actors = actors_for_group_asset(shell, root);
+    if (actors.empty()) {
+        set_status(shell, "Combined asset save requires a selected group or live Forge objects.");
+        return;
+    }
+
+    core::Transform pivot{};
+    std::string name = shell.groupAssetName;
+    if (root != nullptr) {
+        pivot = root->transform;
+        name = root->name;
+    } else {
+        for (const TrackedActor* actor : actors) {
+            pivot.translation.x += actor->transform.translation.x;
+            pivot.translation.y += actor->transform.translation.y;
+            pivot.translation.z += actor->transform.translation.z;
+        }
+        const float count = static_cast<float>(actors.size());
+        pivot.translation.x /= count;
+        pivot.translation.y /= count;
+        pivot.translation.z /= count;
+    }
+
+    std::vector<recipe::ActorInstruction> instructions;
+    instructions.reserve(actors.size());
+    const core::Quat inversePivot = inverse_quaternion(pivot.rotation);
+    for (const TrackedActor* actor : actors) {
+        core::Transform relative = actor->transform;
+        const core::Vec3 offset{actor->transform.translation.x - pivot.translation.x,
+                                actor->transform.translation.y - pivot.translation.y,
+                                actor->transform.translation.z - pivot.translation.z};
+        relative.translation = rotate_point(inversePivot, offset);
+        relative.rotation =
+            normalized_quaternion(multiply_quaternion(inversePivot, actor->transform.rotation));
+        relative.uniformScale = actor->transform.uniformScale / pivot.uniformScale;
+        std::uint64_t parentId = 0;
+        if (actor->parentId != 0 && (root == nullptr || actor->parentId != root->editorId)
+            && std::any_of(actors.begin(), actors.end(), [actor](const TrackedActor* candidate) {
+                   return candidate->editorId == actor->parentId;
+               })) {
+            parentId = actor->parentId;
+        }
+        instructions.push_back(
+            {actor->editorId, parentId, actor->name, actor->tag, actor->objectType, relative});
+    }
+    const recipe::IoResult result = group_recipe::save(name, instructions);
+    if (result.succeeded) {
+        refresh_group_assets(shell);
+    }
+    set_status(shell, "%s %zu object(s).", result.message.c_str(), result.instructionCount);
+}
+
+void queue_group_asset(ShellState& shell, const group_recipe::GroupAsset& group) {
+    teleport::Vector camera{};
+    teleport::Vector forward{};
+    if (!teleport::current_camera_pose(camera, forward)) {
+        set_status(shell, "Combined asset spawn is waiting for a published camera pose.");
+        return;
+    }
+    core::Transform pivot{};
+    pivot.translation = {camera[0] + forward[0] * shell.spawnDistance,
+                         camera[1] + forward[1] * shell.spawnDistance,
+                         camera[2] + forward[2] * shell.spawnDistance};
+
+    TrackedActor root{};
+    root.editorId = shell.nextActorId++;
+    root.name = group.name;
+    root.transform = pivot;
+    root.source = ActorSource::forge;
+    root.virtualGroup = true;
+    const std::uint64_t rootId = root.editorId;
+    shell.actors.push_back(std::move(root));
+
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> ids;
+    ids.reserve(group.actors.size());
+    for (const auto& instruction : group.actors) {
+        ids.emplace_back(instruction.editorId, shell.nextActorId++);
+    }
+    const auto remap = [&ids, rootId](std::uint64_t oldId) {
+        if (oldId == 0) {
+            return rootId;
+        }
+        const auto found = std::find_if(
+            ids.begin(), ids.end(), [oldId](const auto& pair) { return pair.first == oldId; });
+        return found == ids.end() ? rootId : found->second;
+    };
+    for (std::size_t index = 0; index < group.actors.size(); ++index) {
+        const auto& instruction = group.actors[index];
+        SpawnCommand command{};
+        command.editorId = ids[index].second;
+        command.parentId = remap(instruction.parentId);
+        command.name = instruction.name;
+        command.tag = instruction.tag;
+        command.objectType = instruction.objectType;
+        command.transform = instruction.transform;
+        const core::Vec3 rotated = rotate_point(pivot.rotation, instruction.transform.translation);
+        command.transform.translation = {pivot.translation.x + rotated.x,
+                                         pivot.translation.y + rotated.y,
+                                         pivot.translation.z + rotated.z};
+        command.transform.rotation = normalized_quaternion(
+            multiply_quaternion(pivot.rotation, instruction.transform.rotation));
+        command.transform.uniformScale *= pivot.uniformScale;
+        command.absolute = true;
+        command.additiveSelection = true;
+        command.selectionOnCompletion = index + 1 == group.actors.size() ? rootId : std::uint64_t{};
+        shell.spawnQueue.push_back(std::move(command));
+    }
+    clear_actor_selection(shell);
+    set_status(shell,
+               "Queued combined asset %s with %zu relative object(s).",
+               group.name.c_str(),
+               group.actors.size());
 }
 
 [[nodiscard]] std::string actor_name(std::uint32_t tag, std::uint8_t objectType) {
@@ -896,7 +1225,16 @@ bool collect_world_object(void* context,
     actor.objectType = observation.objectType;
     actor.source = ActorSource::liveMap;
     actor.identity = observation.identity;
-    actor.transformKnown = false;
+    if (observation.transformKnown) {
+        actor.transform.translation = {
+            observation.position[0], observation.position[1], observation.position[2]};
+        actor.transform.rotation = {observation.rotation[0],
+                                    observation.rotation[1],
+                                    observation.rotation[2],
+                                    observation.rotation[3]};
+        actor.transform.uniformScale = observation.scale;
+        actor.transformKnown = actor.transform.is_finite();
+    }
     import.actors->push_back(std::move(actor));
     return true;
 }
@@ -907,44 +1245,161 @@ bool collect_world_object(void* context,
     return kAuthoredActorIdMask | table | (entryIndex & 0xFFFFFFU);
 }
 
+[[nodiscard]] std::uint64_t authored_child_actor_id(std::size_t candidateIndex) noexcept {
+    return kAuthoredChildActorIdMask | static_cast<std::uint64_t>(candidateIndex + 1U);
+}
+
+[[nodiscard]] const char*
+authored_kind_name(runtime::custom_package_builder::AuthoredPlacementKind kind) noexcept {
+    using Kind = runtime::custom_package_builder::AuthoredPlacementKind;
+    switch (kind) {
+    case Kind::entity:
+        return "Entity";
+    case Kind::staticAggregate:
+        return "Static aggregate";
+    case Kind::staticInstance:
+        return "Static mesh instance";
+    case Kind::sky:
+        return "Sky";
+    case Kind::visibility:
+        return "Visibility bundle";
+    case Kind::collision:
+        return "Collision";
+    case Kind::entityModel:
+        return "Entity model";
+    case Kind::component:
+        return "Component / scenery";
+    case Kind::resource:
+        return "Unclassified resource";
+    }
+    return "Unknown";
+}
+
+[[nodiscard]] const char* authored_resource_class_name(std::uint32_t resourceClass) noexcept {
+    switch (resourceClass) {
+    case 0x808071B3U:
+        return "Static map";
+    case 0x80806F91U:
+        return "Sky placement";
+    case 0x80807246U:
+        return "Visibility bundle";
+    case 0x8080929BU:
+        return "Direct Havok collision";
+    case 0x80806DE0U:
+        return "Entity model";
+    case 0x808038A0U:
+    case 0x80805FA9U:
+        return "Component scenery";
+    default:
+        return "Unclassified";
+    }
+}
+
+[[nodiscard]] std::string
+authored_actor_name(const ShellState& shell,
+                    const runtime::custom_package_builder::AuthoredPlacementCandidate& candidate) {
+    using Kind = runtime::custom_package_builder::AuthoredPlacementKind;
+    if (candidate.kind == Kind::staticAggregate && candidate.resourceTag == 0x8150E15AU) {
+        return "VFX Grid Baseplate Aggregate";
+    }
+    if (candidate.kind == Kind::sky && candidate.binding.tableTag == 0x8150E150U) {
+        return "VFX Test Sky";
+    }
+    if (candidate.kind == Kind::staticInstance) {
+        const std::string_view customName = custom_asset_name(shell, candidate.meshTag);
+        std::array<char, 192> name{};
+        if (!customName.empty()) {
+            (void)std::snprintf(name.data(),
+                                name.size(),
+                                "%.*s / Instance %u",
+                                static_cast<int>(customName.size()),
+                                customName.data(),
+                                static_cast<unsigned>(candidate.transformIndex));
+        } else {
+            (void)std::snprintf(name.data(),
+                                name.size(),
+                                "Static Mesh %08X / Instance %u",
+                                static_cast<unsigned>(candidate.meshTag),
+                                static_cast<unsigned>(candidate.transformIndex));
+        }
+        return name.data();
+    }
+
+    const std::uint32_t identity =
+        candidate.resourceTag != 0 ? candidate.resourceTag : candidate.entityTag;
+    const std::string_view customName = custom_asset_name(shell, identity);
+    if (!customName.empty()) {
+        return std::string{customName};
+    }
+    std::array<char, 192> name{};
+    if (candidate.kind == Kind::entity && candidate.objectTypeKnown) {
+        const std::string_view type = research::native_object_type_name(candidate.objectType);
+        (void)std::snprintf(
+            name.data(), name.size(), "Entity %.*s", static_cast<int>(type.size()), type.data());
+    } else if (candidate.kind == Kind::resource) {
+        (void)std::snprintf(name.data(),
+                            name.size(),
+                            "Resource Class %08X",
+                            static_cast<unsigned>(candidate.resourceClass));
+    } else {
+        (void)std::snprintf(name.data(), name.size(), "%s", authored_kind_name(candidate.kind));
+    }
+    return name.data();
+}
+
 void append_authored_placements(ShellState& shell,
                                 std::vector<TrackedActor>& imported,
                                 std::size_t& authoredCount) {
     authoredCount = 0;
+    shell.authoredScan = {};
     if (shell.loadedMapRoot.empty()) {
         return;
     }
-    std::vector<runtime::custom_package_builder::StaticPlacementCandidate> candidates(
+    std::vector<runtime::custom_package_builder::AuthoredPlacementCandidate> candidates(
         kAuthoredPlacementCapacity);
     std::size_t candidateCount = 0;
-    if (!runtime::custom_package_builder::discover_authored_static_placements(
-            shell.loadedMapRoot, candidates, candidateCount)) {
+    if (!runtime::custom_package_builder::discover_authored_placements(
+            shell.loadedMapRoot, candidates, candidateCount, shell.authoredScan)) {
         return;
     }
-    for (const auto& candidate : std::span(candidates).first(candidateCount)) {
+    const std::span<const runtime::custom_package_builder::AuthoredPlacementCandidate> emitted =
+        std::span(candidates).first(candidateCount);
+    for (std::size_t candidateIndex = 0; candidateIndex < emitted.size(); ++candidateIndex) {
+        const auto& candidate = emitted[candidateIndex];
         TrackedActor actor{};
         actor.editorId =
-            authored_actor_id(candidate.binding.tableTag, candidate.binding.entryIndex);
-        actor.tag = candidate.binding.parentTag;
+            candidate.parentCandidateIndex
+                    == runtime::custom_package_builder::kNoAuthoredPlacementParent
+                ? authored_actor_id(candidate.binding.tableTag, candidate.binding.entryIndex)
+                : authored_child_actor_id(candidateIndex);
+        if (candidate.parentCandidateIndex < candidateIndex) {
+            const auto& parent = emitted[candidate.parentCandidateIndex];
+            actor.parentId = authored_actor_id(parent.binding.tableTag, parent.binding.entryIndex);
+        }
+        actor.tag = candidate.meshTag != 0 ? candidate.meshTag
+                                           : (candidate.resourceTag != 0 ? candidate.resourceTag
+                                                                         : candidate.entityTag);
         actor.handle = kInvalidHandle;
         actor.tableTag = candidate.binding.tableTag;
         actor.entryIndex = candidate.binding.entryIndex;
         actor.parentTag = candidate.binding.parentTag;
+        actor.resourceClass = candidate.resourceClass;
+        actor.resourceTag = candidate.resourceTag;
+        actor.dataTag = candidate.dataTag;
+        actor.authoredEntityTag = candidate.entityTag;
+        actor.authoredWorldId = candidate.worldId;
+        actor.groupIndex = candidate.groupIndex;
+        actor.transformIndex = candidate.transformIndex;
+        actor.authoredDataBytes = candidate.dataBytes;
+        actor.objectType = candidate.objectType;
         actor.transform = candidate.binding.sourceTransform;
+        actor.authoredSourceTransform = candidate.binding.sourceTransform;
         actor.source = ActorSource::authoredMap;
-        actor.transformKnown = true;
-        const std::string_view customName = custom_asset_name(shell, actor.tag);
-        if (!customName.empty()) {
-            actor.name = customName;
-        } else {
-            std::array<char, 128> name{};
-            (void)std::snprintf(name.data(),
-                                name.size(),
-                                "Static Placement %08X:%u",
-                                static_cast<unsigned>(actor.tableTag),
-                                static_cast<unsigned>(actor.entryIndex));
-            actor.name = name.data();
-        }
+        actor.authoredKind = candidate.kind;
+        actor.transformKnown = candidate.transformKnown;
+        actor.authoredObjectTypeKnown = candidate.objectTypeKnown;
+        actor.authoredStageEditable = candidate.stageEditable;
+        actor.name = authored_actor_name(shell, candidate);
         imported.push_back(std::move(actor));
         ++authoredCount;
     }
@@ -957,23 +1412,32 @@ void refresh_world_objects(ShellState& shell) {
                        [](const auto& actor) { return !native_spawn::object_live(actor.handle); }),
         shell.quarantinedActors.end());
 
+    std::vector<TrackedActor> imported;
+    imported.reserve((1U << 13U) + kAuthoredPlacementCapacity);
+    std::size_t authoredCount = 0;
+    append_authored_placements(shell, imported, authoredCount);
+
     std::vector<native_spawn::WorldObjectDefinition> definitions;
-    definitions.reserve(shell.assets.size());
+    definitions.reserve(shell.assets.size() + authoredCount);
     for (const AssetRecord& asset : shell.assets) {
         if (asset.resident && asset.typeKnown) {
             definitions.push_back({asset.tag, asset.objectType});
         }
     }
+    for (const TrackedActor& actor : imported) {
+        if (actor.source == ActorSource::authoredMap && actor.parentId == 0
+            && actor.authoredObjectTypeKnown && actor.authoredEntityTag != 0) {
+            definitions.push_back({actor.authoredEntityTag, actor.objectType});
+        }
+    }
 
-    std::vector<TrackedActor> imported;
-    imported.reserve((1U << 13U) + kAuthoredPlacementCapacity);
     WorldImportContext context{&shell, &imported};
     native_spawn::WorldObjectScan scan{};
     const bool liveScanned =
         shell.catalogReady && native_spawn::ready() && !definitions.empty()
         && native_spawn::visit_world_objects(definitions, &context, &collect_world_object, scan);
-    std::size_t authoredCount = 0;
-    append_authored_placements(shell, imported, authoredCount);
+    apply_saved_authored_edits(shell, imported);
+    summarize_live_map_objects(shell, imported);
     const bool authoredScanned = authoredCount != 0;
     if (!liveScanned && !authoredScanned) {
         shell.worldObjectsScanned = false;
@@ -1006,11 +1470,16 @@ void refresh_world_objects(ShellState& shell) {
             return actor.source == ActorSource::liveMap;
         }));
     set_status(shell,
-               "Explorer mapped %zu live object(s) and %zu authored static placement(s): %zu "
-               "handles, %zu ambiguous, %zu unstable.",
+               "Explorer mapped %zu live datum(s), %zu authored row(s), and %zu expanded static "
+               "instance(s) from %zu table(s)%s: %zu live transforms, %zu authored bindings, "
+               "%zu ambiguous, %zu unstable.",
                liveCount,
-               authoredCount,
-               scan.liveHandles,
+               shell.authoredScan.placementRows,
+               shell.authoredScan.staticInstances,
+               shell.authoredScan.mapTables,
+               shell.authoredScan.truncated ? " (catalog truncated)" : "",
+               shell.liveEditableMapObjects,
+               shell.liveBoundAuthoredObjects,
                scan.ambiguousObjects,
                scan.unstableObjects);
 }
@@ -1051,6 +1520,45 @@ void queue_duplicate(ShellState& shell, const TrackedActor& actor, bool additive
     shell.spawnQueue.push_back(std::move(command));
 }
 
+void queue_duplicate_group(ShellState& shell, const TrackedActor& source) {
+    const std::vector<std::uint64_t> memberIds = group_member_ids(shell, source.editorId);
+    std::vector<TrackedActor> members;
+    members.reserve(memberIds.size());
+    for (const std::uint64_t id : memberIds) {
+        if (const TrackedActor* const actor = find_actor(shell, id);
+            actor != nullptr && !actor->virtualGroup && actor->source == ActorSource::forge
+            && actor->transformKnown && !actor->nativeExpired) {
+            members.push_back(*actor);
+        }
+    }
+    if (members.empty()) {
+        return;
+    }
+
+    TrackedActor root = source;
+    root.editorId = shell.nextActorId++;
+    root.parentId = source.parentId;
+    root.name += " Copy";
+    root.transform.translation.x += 1.0F;
+    const std::uint64_t rootId = root.editorId;
+    shell.actors.push_back(std::move(root));
+
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        SpawnCommand command{};
+        command.editorId = shell.nextActorId++;
+        command.parentId = rootId;
+        command.name = members[index].name + " Copy";
+        command.tag = members[index].tag;
+        command.objectType = members[index].objectType;
+        command.transform = members[index].transform;
+        command.transform.translation.x += 1.0F;
+        command.absolute = true;
+        command.additiveSelection = true;
+        command.selectionOnCompletion = index + 1 == members.size() ? rootId : std::uint64_t{};
+        shell.spawnQueue.push_back(std::move(command));
+    }
+}
+
 void duplicate_selected(ShellState& shell) {
     const std::vector<std::uint64_t> selected = shell.selectedActorIds;
     std::vector<std::uint64_t> duplicable;
@@ -1058,7 +1566,10 @@ void duplicate_selected(ShellState& shell) {
     for (const std::uint64_t id : selected) {
         const TrackedActor* const actor = find_actor(shell, id);
         if (actor != nullptr && actor->transformKnown
-            && actor->source != ActorSource::authoredMap) {
+            && (actor->source != ActorSource::authoredMap
+                || (actor->authoredLiveBound
+                    && actor->authoredKind
+                           == runtime::custom_package_builder::AuthoredPlacementKind::entity))) {
             duplicable.push_back(id);
         }
     }
@@ -1070,7 +1581,12 @@ void duplicate_selected(ShellState& shell) {
     clear_actor_selection(shell);
     for (const std::uint64_t id : duplicable) {
         if (const TrackedActor* const actor = find_actor(shell, id); actor != nullptr) {
-            queue_duplicate(shell, *actor, true);
+            const TrackedActor snapshot = *actor;
+            if (snapshot.virtualGroup) {
+                queue_duplicate_group(shell, snapshot);
+            } else {
+                queue_duplicate(shell, snapshot, true);
+            }
         }
     }
     set_status(shell,
@@ -1084,7 +1600,17 @@ void duplicate_selected(ShellState& shell) {
         shell.selectedActorIds.begin(), shell.selectedActorIds.end(), [&shell](std::uint64_t id) {
             const TrackedActor* const actor = find_actor(shell, id);
             return actor != nullptr && actor->transformKnown
-                   && actor->source != ActorSource::authoredMap;
+                   && (actor->source != ActorSource::authoredMap
+                       || (actor->authoredLiveBound
+                           && actor->authoredKind
+                                  == runtime::custom_package_builder::AuthoredPlacementKind::
+                                      entity))
+                   && (!actor->virtualGroup
+                       || std::any_of(
+                           shell.actors.begin(), shell.actors.end(), [&](const auto& row) {
+                               return !row.virtualGroup
+                                      && actor_descends_from(shell, row, actor->editorId);
+                           }));
         });
 }
 
@@ -1097,6 +1623,21 @@ void duplicate_selected(ShellState& shell) {
            && ((actor->source == ActorSource::forge && actor->transformKnown)
                || (actor->source == ActorSource::liveMap
                    && activation_transform_type(actor->objectType)));
+}
+
+[[nodiscard]] bool can_hide_authored_actor(const TrackedActor* actor) noexcept {
+    return actor != nullptr && authored_transform_editable(*actor) && !actor->authoredHidden;
+}
+
+bool hide_authored_actor(ShellState& shell, TrackedActor& actor) {
+    if (!can_hide_authored_actor(&actor)) {
+        return false;
+    }
+    core::Transform hidden = actor.transform;
+    hidden.translation.z = actor.authoredSourceTransform.translation.z - kAuthoredHideDepth;
+    hidden.uniformScale = kAuthoredHideScale;
+    write_actor_transform(shell, actor, hidden, true);
+    return actor.authoredHidden;
 }
 
 void erase_actor_record(ShellState& shell, std::vector<TrackedActor>::iterator actor) {
@@ -1136,8 +1677,17 @@ void service_actor_lifetimes(ShellState& shell) {
     }
     shell.nextLifetimeCheck = now + 0.5;
     for (TrackedActor& actor : shell.actors) {
-        if (actor.source == ActorSource::forge && actor.handle != kInvalidHandle) {
+        const bool ownsLiveHandle =
+            actor.handle != kInvalidHandle
+            && (actor.source == ActorSource::forge || actor.source == ActorSource::liveMap
+                || actor.authoredLiveBound);
+        if (ownsLiveHandle) {
             actor.nativeExpired = !native_spawn::object_live(actor.handle);
+            if (actor.nativeExpired && actor.source == ActorSource::authoredMap) {
+                actor.authoredLiveBound = false;
+                actor.handle = kInvalidHandle;
+                actor.nativeExpired = false;
+            }
         }
     }
 }
@@ -1157,6 +1707,28 @@ bool quarantine_actor(ShellState& shell, std::uint64_t actorId) {
         set_status(shell,
                    "Remove blocked: this native object type has no source-backed transform path.");
         return false;
+    }
+
+    if (found->virtualGroup) {
+        const std::uint64_t groupId = found->editorId;
+        std::vector<std::uint64_t> children;
+        for (const TrackedActor& actor : shell.actors) {
+            if (actor.parentId == groupId) {
+                children.push_back(actor.editorId);
+            }
+        }
+        bool succeeded = true;
+        for (const std::uint64_t child : children) {
+            succeeded = quarantine_actor(shell, child) && succeeded;
+        }
+        const auto current =
+            std::find_if(shell.actors.begin(), shell.actors.end(), [groupId](const auto& actor) {
+                return actor.editorId == groupId;
+            });
+        if (current != shell.actors.end()) {
+            erase_actor_record(shell, current);
+        }
+        return succeeded;
     }
 
     if (found->source == ActorSource::forge && !native_spawn::object_live(found->handle)) {
@@ -1210,8 +1782,20 @@ void delete_selected(ShellState& shell) {
     const std::vector<std::uint64_t> selected = shell.selectedActorIds;
     std::size_t removed = 0;
     std::size_t blocked = 0;
+    std::size_t staged = 0;
+    std::size_t liveAuthored = 0;
     for (const std::uint64_t id : selected) {
-        const TrackedActor* const actor = find_actor(shell, id);
+        TrackedActor* const actor = find_actor(shell, id);
+        if (can_hide_authored_actor(actor)) {
+            if (hide_authored_actor(shell, *actor)) {
+                ++removed;
+                staged += actor->authoredStageEditable ? 1U : 0U;
+                liveAuthored += actor->authoredLiveBound ? 1U : 0U;
+            } else {
+                ++blocked;
+            }
+            continue;
+        }
         if (!can_quarantine_actor(actor)) {
             ++blocked;
             continue;
@@ -1230,16 +1814,19 @@ void delete_selected(ShellState& shell) {
         return;
     }
     set_status(shell,
-               "Removed %zu selected object%s%s.",
+               "Removed %zu selected object%s%s%s%s.",
                removed,
                removed == 1 ? "" : "s",
+               liveAuthored != 0 ? " live" : "",
+               staged != 0 ? " with persistent edits" : "",
                blocked == 0 ? "" : "; unsupported map objects were left selected");
 }
 
 [[nodiscard]] bool selected_actor_can_delete(const ShellState& shell) noexcept {
     return std::any_of(
         shell.selectedActorIds.begin(), shell.selectedActorIds.end(), [&shell](std::uint64_t id) {
-            return can_quarantine_actor(find_actor(shell, id));
+            const TrackedActor* const actor = find_actor(shell, id);
+            return can_quarantine_actor(actor) || can_hide_authored_actor(actor);
         });
 }
 
@@ -1345,6 +1932,10 @@ void complete_spawn(ShellState& shell,
     }
     add_actor_selection(shell, command.editorId);
     shell.selectionAnchorId = command.editorId;
+    if (command.selectionOnCompletion != 0
+        && find_actor(shell, command.selectionOnCompletion) != nullptr) {
+        select_only_actor(shell, command.selectionOnCompletion);
+    }
     set_status(shell,
                "Created 0x%08X with native handle 0x%08X.",
                static_cast<unsigned>(command.tag),
@@ -1352,6 +1943,8 @@ void complete_spawn(ShellState& shell,
 }
 
 void service_spawn_queue(ShellState& shell) {
+    // Publish a timeout even when the controlled-player update hook is not running.
+    (void)native_spawn::busy();
     const native_spawn::SpawnObservation observation = native_spawn::last_spawn_observation();
     if (shell.spawnInFlight) {
         if (observation.sequence <= shell.submittedSequence || shell.spawnQueue.empty()) {
@@ -1404,40 +1997,315 @@ void service_spawn_queue(ShellState& shell) {
     return std::memcmp(&left, &right, sizeof(core::Transform)) == 0;
 }
 
-void write_actor_transform(ShellState& shell,
+[[nodiscard]] bool authored_row_editable(const TrackedActor& actor) noexcept {
+    return actor.source == ActorSource::authoredMap && actor.parentId == 0
+           && actor.authoredStageEditable && actor.transformKnown;
+}
+
+[[nodiscard]] bool authored_transform_editable(const TrackedActor& actor) noexcept {
+    return actor.source == ActorSource::authoredMap && actor.parentId == 0 && actor.transformKnown
+           && (actor.authoredLiveBound || actor.authoredStageEditable);
+}
+
+[[nodiscard]] bool authored_edit_pending(const TrackedActor& actor) noexcept {
+    return authored_row_editable(actor)
+           && (actor.authoredHidden
+               || !same_transform(actor.transform, actor.authoredSourceTransform));
+}
+
+void apply_saved_authored_edits(ShellState& shell, std::vector<TrackedActor>& actors) {
+    shell.pendingAuthoredEdits = 0;
+    shell.staleAuthoredEdits = 0;
+    std::wstring path{};
+    if (!authored_recipe::default_path(shell.loadedMapRoot, path)) {
+        return;
+    }
+    authored_recipe::Recipe saved{};
+    const recipe::IoResult loaded = authored_recipe::load(path, saved);
+    if (!loaded.succeeded) {
+        shell.staleAuthoredEdits = 1;
+        return;
+    }
+    if (saved.edits.empty()) {
+        return;
+    }
+    if (saved.mapRoot != shell.loadedMapRoot) {
+        shell.staleAuthoredEdits = saved.edits.size();
+        return;
+    }
+    for (const authored_recipe::Instruction& edit : saved.edits) {
+        const auto found =
+            std::find_if(actors.begin(), actors.end(), [&](const TrackedActor& actor) {
+                return authored_row_editable(actor) && actor.tableTag == edit.binding.tableTag
+                       && actor.entryIndex == edit.binding.entryIndex
+                       && actor.parentTag == edit.binding.parentTag
+                       && actor.authoredEntityTag == edit.entityTag
+                       && actor.resourceClass == edit.resourceClass
+                       && actor.resourceTag == edit.resourceTag
+                       && same_transform(actor.authoredSourceTransform,
+                                         edit.binding.sourceTransform);
+            });
+        if (found == actors.end()) {
+            ++shell.staleAuthoredEdits;
+            continue;
+        }
+        found->transform = edit.targetTransform;
+        found->authoredHidden = edit.hidden;
+        ++shell.pendingAuthoredEdits;
+    }
+}
+
+void summarize_live_map_objects(ShellState& shell, const std::vector<TrackedActor>& actors) {
+    shell.liveEditableMapObjects = static_cast<std::size_t>(
+        std::count_if(actors.begin(), actors.end(), [](const TrackedActor& actor) {
+            return actor.source == ActorSource::liveMap && actor.transformKnown;
+        }));
+    // Shared definition tags and nearby poses do not establish package-to-datum ownership.
+    // Keep both rows; refreshing the catalog must not write a transform to a guessed object.
+    shell.liveBoundAuthoredObjects = 0;
+}
+
+bool persist_authored_edits(ShellState& shell) {
+    std::wstring path{};
+    if (!authored_recipe::default_path(shell.loadedMapRoot, path)) {
+        return false;
+    }
+    std::vector<authored_recipe::Instruction> edits{};
+    edits.reserve(shell.actors.size());
+    for (const TrackedActor& actor : shell.actors) {
+        if (!authored_edit_pending(actor)) {
+            continue;
+        }
+        authored_recipe::Instruction edit{};
+        edit.binding = {
+            actor.tableTag, actor.entryIndex, actor.parentTag, actor.authoredSourceTransform};
+        edit.entityTag = actor.authoredEntityTag;
+        edit.resourceClass = actor.resourceClass;
+        edit.resourceTag = actor.resourceTag;
+        edit.targetTransform = actor.transform;
+        edit.hidden = actor.authoredHidden;
+        edits.push_back(edit);
+    }
+    const recipe::IoResult saved = authored_recipe::save(path, shell.loadedMapRoot, edits);
+    if (saved.succeeded) {
+        shell.pendingAuthoredEdits = saved.instructionCount;
+        shell.staleAuthoredEdits = 0;
+    }
+    return saved.succeeded;
+}
+
+bool stage_pending_authored_edits(ShellState& shell) {
+    if (shell.staleAuthoredEdits != 0) {
+        set_status(shell,
+                   "Stage blocked: %zu saved edit%s no longer match the installed map catalog.",
+                   shell.staleAuthoredEdits,
+                   shell.staleAuthoredEdits == 1 ? "" : "s");
+        return false;
+    }
+    std::vector<runtime::custom_package_builder::AuthoredPlacementEdit> edits{};
+    edits.reserve(shell.pendingAuthoredEdits);
+    for (const TrackedActor& actor : shell.actors) {
+        if (!authored_edit_pending(actor)) {
+            continue;
+        }
+        runtime::custom_package_builder::AuthoredPlacementEdit edit{};
+        edit.binding = {
+            actor.tableTag, actor.entryIndex, actor.parentTag, actor.authoredSourceTransform};
+        edit.entityTag = actor.authoredEntityTag;
+        edit.resourceClass = actor.resourceClass;
+        edit.resourceTag = actor.resourceTag;
+        edit.targetTransform = actor.transform;
+        edits.push_back(edit);
+    }
+    if (edits.empty()) {
+        set_status(shell, "No authored Pandora edits are pending.");
+        return false;
+    }
+    if (!persist_authored_edits(shell)) {
+        set_status(shell, "Stage blocked because the persistent authored recipe did not save.");
+        return false;
+    }
+    const bool staged =
+        runtime::custom_package_builder::stage_authored_map_root(shell.loadedMapRoot, edits);
+    set_status(shell,
+               staged ? "Staged %zu exact Pandora row edit%s. Close Destiny before promoting the "
+                        "generated package files; this world is unchanged."
+                      : "Pandora staging failed closed; no active package was modified.",
+               edits.size(),
+               edits.size() == 1 ? "" : "s");
+    return staged;
+}
+
+bool write_group_transform(ShellState& shell,
+                           TrackedActor& group,
+                           const core::Transform& transform,
+                           bool recordHistory) {
+    if (!transform.is_finite() || transform.uniformScale <= 0.0F) {
+        set_status(shell, "Group transform rejected: the authored transform is invalid.");
+        return false;
+    }
+    const core::Transform before = group.transform;
+    const float scaleRatio = transform.uniformScale / before.uniformScale;
+    const core::Quat rotationDelta = normalized_quaternion(
+        multiply_quaternion(transform.rotation, inverse_quaternion(before.rotation)));
+    std::vector<std::pair<std::uint64_t, core::Transform>> edits;
+    std::vector<native_spawn::TransformRequest> requests;
+    for (TrackedActor& actor : shell.actors) {
+        if (actor.editorId == group.editorId
+            || !actor_descends_from(shell, actor, group.editorId)) {
+            continue;
+        }
+        if (!actor.transformKnown || actor.nativeExpired) {
+            set_status(shell, "Group transform rejected: a member has no live transform.");
+            return false;
+        }
+        const core::Vec3 oldOffset{actor.transform.translation.x - before.translation.x,
+                                   actor.transform.translation.y - before.translation.y,
+                                   actor.transform.translation.z - before.translation.z};
+        const core::Vec3 scaledOffset{
+            oldOffset.x * scaleRatio, oldOffset.y * scaleRatio, oldOffset.z * scaleRatio};
+        const core::Vec3 newOffset = rotate_point(rotationDelta, scaledOffset);
+        core::Transform target = actor.transform;
+        target.translation = {transform.translation.x + newOffset.x,
+                              transform.translation.y + newOffset.y,
+                              transform.translation.z + newOffset.z};
+        target.rotation =
+            normalized_quaternion(multiply_quaternion(rotationDelta, actor.transform.rotation));
+        target.uniformScale *= scaleRatio;
+        if (!target.is_finite() || target.uniformScale <= 0.0F) {
+            set_status(shell, "Group transform rejected: a member transform would overflow.");
+            return false;
+        }
+        edits.emplace_back(actor.editorId, target);
+        if (actor.virtualGroup) {
+            continue;
+        }
+        requests.push_back(
+            {actor.handle,
+             {target.translation.x, target.translation.y, target.translation.z},
+             {target.rotation.x, target.rotation.y, target.rotation.z, target.rotation.w},
+             target.uniformScale});
+    }
+    if (!requests.empty() && !native_spawn::request_transforms(requests)) {
+        set_status(shell,
+                   "Group transform rejected: a member expired or the native queue is full.");
+        return false;
+    }
+    for (const auto& [id, target] : edits) {
+        find_actor(shell, id)->transform = target;
+    }
+    group.transform = transform;
+    if (recordHistory && !same_transform(before, transform)) {
+        shell.undo.push_back({group.editorId, before, transform});
+        shell.redo.clear();
+    }
+    set_status(shell, "Group transform queued for %zu native object(s).", requests.size());
+    return true;
+}
+
+bool write_actor_transform(ShellState& shell,
                            TrackedActor& actor,
                            const core::Transform& transform,
                            bool recordHistory) {
+    if (actor.virtualGroup) {
+        return write_group_transform(shell, actor, transform, recordHistory);
+    }
     if (actor.source == ActorSource::authoredMap) {
-        set_status(shell,
-                   "Authored placement transforms are read-only until package edit replay is "
-                   "connected to the live world.");
-        return;
+        if (!authored_transform_editable(actor)) {
+            set_status(shell,
+                       "This authored row has neither a live native binding nor an independently "
+                       "writable package record.");
+            return false;
+        }
+        if (!transform.is_finite() || transform.uniformScale <= 0.0F) {
+            set_status(shell, "Authored edit rejected: the target transform is invalid.");
+            return false;
+        }
+        const core::Transform before = actor.transform;
+        const bool beforeHidden = actor.authoredHidden;
+        const bool deferPersistence =
+            shell.gizmoDrag.active && shell.gizmoDrag.actorId == actor.editorId && !recordHistory;
+        actor.transform = transform;
+        actor.authoredHidden =
+            transform.uniformScale <= kAuthoredHideScale * 1.01F
+            && transform.translation.z
+                   <= actor.authoredSourceTransform.translation.z - kAuthoredHideDepth * 0.5F;
+        if (actor.authoredStageEditable && !deferPersistence && !persist_authored_edits(shell)) {
+            actor.transform = before;
+            actor.authoredHidden = beforeHidden;
+            set_status(shell, "Authored edit was not saved; the in-memory change was reverted.");
+            return false;
+        }
+
+        bool queued = false;
+        if (actor.authoredLiveBound && !actor.nativeExpired) {
+            const std::array<float, 3> position{
+                transform.translation.x, transform.translation.y, transform.translation.z};
+            const std::array<float, 4> rotation{transform.rotation.x,
+                                                transform.rotation.y,
+                                                transform.rotation.z,
+                                                transform.rotation.w};
+            queued = native_spawn::request_transform(
+                actor.handle, position, rotation, transform.uniformScale);
+        }
+        if (actor.authoredLiveBound && !queued && !actor.authoredStageEditable) {
+            actor.transform = before;
+            actor.authoredHidden = beforeHidden;
+            set_status(shell,
+                       "Live transform queue rejected for authored handle 0x%08X.",
+                       static_cast<unsigned>(actor.handle));
+            return false;
+        }
+        if (recordHistory && !same_transform(before, transform)) {
+            shell.undo.push_back({actor.editorId, before, transform});
+            shell.redo.clear();
+        }
+        if (queued) {
+            set_status(shell,
+                       deferPersistence ? "Previewing authored row %08X:%u live."
+                       : actor.authoredStageEditable
+                           ? "Queued authored row %08X:%u live and saved its persistent edit."
+                           : "Queued authored row %08X:%u live; this package is not yet writable "
+                             "for persistence.",
+                       static_cast<unsigned>(actor.tableTag),
+                       static_cast<unsigned>(actor.entryIndex));
+        } else {
+            set_status(shell,
+                       "Saved authored row %08X:%u for the next staged Pandora load; no live "
+                       "runtime binding was available.",
+                       static_cast<unsigned>(actor.tableTag),
+                       static_cast<unsigned>(actor.entryIndex));
+        }
+        return true;
     }
     if (actor.nativeExpired) {
         set_status(shell, "Transform blocked: Destiny already destroyed this transient object.");
-        return;
+        return false;
     }
     if (!actor.transformKnown || !transform.is_finite() || transform.uniformScale <= 0.0F) {
         set_status(shell, "Transform blocked: this live map object's transform is not decoded.");
-        return;
+        return false;
     }
     const core::Transform before = actor.transform;
-    actor.transform = transform;
     const std::array<float, 3> position{
         transform.translation.x, transform.translation.y, transform.translation.z};
     const std::array<float, 4> rotation{
         transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w};
     const bool queued =
         native_spawn::request_transform(actor.handle, position, rotation, transform.uniformScale);
+    if (!queued) {
+        set_status(shell,
+                   "Transform queue rejected for handle 0x%08X.",
+                   static_cast<unsigned>(actor.handle));
+        return false;
+    }
+    actor.transform = transform;
     if (recordHistory && !same_transform(before, transform)) {
         shell.undo.push_back({actor.editorId, before, transform});
         shell.redo.clear();
     }
-    set_status(shell,
-               queued ? "Transform queued for handle 0x%08X."
-                      : "Transform queue rejected for handle 0x%08X.",
-               static_cast<unsigned>(actor.handle));
+    set_status(shell, "Transform queued for handle 0x%08X.", static_cast<unsigned>(actor.handle));
+    return true;
 }
 
 void undo_transform(ShellState& shell, workspace::EditorWorkspace& editor) {
@@ -1446,10 +2314,11 @@ void undo_transform(ShellState& shell, workspace::EditorWorkspace& editor) {
     }
     if (!shell.undo.empty()) {
         const TransformEdit edit = shell.undo.back();
-        shell.undo.pop_back();
         if (TrackedActor* const actor = find_actor(shell, edit.actorId); actor != nullptr) {
-            write_actor_transform(shell, *actor, edit.before, false);
-            shell.redo.push_back(edit);
+            if (write_actor_transform(shell, *actor, edit.before, false)) {
+                shell.undo.pop_back();
+                shell.redo.push_back(edit);
+            }
         }
         return;
     }
@@ -1459,10 +2328,11 @@ void undo_transform(ShellState& shell, workspace::EditorWorkspace& editor) {
 void redo_transform(ShellState& shell, workspace::EditorWorkspace& editor) {
     if (!shell.redo.empty()) {
         const TransformEdit edit = shell.redo.back();
-        shell.redo.pop_back();
         if (TrackedActor* const actor = find_actor(shell, edit.actorId); actor != nullptr) {
-            write_actor_transform(shell, *actor, edit.after, false);
-            shell.undo.push_back(edit);
+            if (write_actor_transform(shell, *actor, edit.after, false)) {
+                shell.redo.pop_back();
+                shell.undo.push_back(edit);
+            }
         }
         return;
     }
@@ -1478,15 +2348,20 @@ void quick_save(ShellState& shell, const workspace::EditorWorkspace& editor) {
     std::vector<recipe::ActorInstruction> instructions;
     instructions.reserve(shell.actors.size());
     for (const TrackedActor& actor : shell.actors) {
-        if (actor.source != ActorSource::forge) {
+        if (actor.source != ActorSource::forge || actor.nativeExpired) {
             continue;
         }
-        instructions.push_back({actor.editorId,
-                                actor.parentId,
-                                actor.name,
-                                actor.tag,
-                                actor.objectType,
-                                actor.transform});
+        const TrackedActor* const parent = find_actor(shell, actor.parentId);
+        instructions.push_back(
+            {actor.editorId,
+             parent != nullptr && parent->source == ActorSource::forge && !parent->nativeExpired
+                 ? actor.parentId
+                 : 0,
+             actor.name,
+             actor.tag,
+             actor.objectType,
+             actor.transform,
+             actor.virtualGroup});
     }
     const recipe::IoResult result =
         recipe::save(path, editor.active_template().displayName, instructions);
@@ -1519,6 +2394,16 @@ void quick_load(ShellState& shell) {
         return found == ids.end() ? std::uint64_t{} : found->second;
     };
     for (const recipe::ActorInstruction& instruction : loaded.actors) {
+        if (instruction.virtualGroup) {
+            TrackedActor group{};
+            group.editorId = remap(instruction.editorId);
+            group.parentId = remap(instruction.parentId);
+            group.name = instruction.name;
+            group.transform = instruction.transform;
+            group.virtualGroup = true;
+            shell.actors.push_back(std::move(group));
+            continue;
+        }
         SpawnCommand command{};
         command.editorId = remap(instruction.editorId);
         command.parentId = remap(instruction.parentId);
@@ -1623,7 +2508,7 @@ void draw_world_template_loader(ShellState& shell, workspace::EditorWorkspace& e
         const std::string filter = lowercase(shell.worldFilter);
         ImGui::TextDisabled("PINNED DESTINATIONS");
         for (const WorldCatalogRecord& world : shell.worlds) {
-            if (world_sort_rank(world.name) >= 2 || !contains_lower(world.name, filter)) {
+            if (world_sort_rank(world.name) >= 3 || !contains_lower(world.name, filter)) {
                 continue;
             }
             draw_world_catalog_row(shell, world);
@@ -1652,7 +2537,7 @@ void draw_world_template_loader(ShellState& shell, workspace::EditorWorkspace& e
         ImGui::Separator();
         ImGui::TextDisabled("INSTALLED DESTINATIONS (%zu)", shell.worlds.size());
         for (const WorldCatalogRecord& world : shell.worlds) {
-            if (world_sort_rank(world.name) < 2
+            if (world_sort_rank(world.name) < 3
                 || (!contains_lower(world.name, filter)
                     && !contains_lower(world.mapRoot, filter))) {
                 continue;
@@ -1689,6 +2574,26 @@ void draw_world_template_loader(ShellState& shell, workspace::EditorWorkspace& e
         g_worldRefreshRequested.store(true, std::memory_order_release);
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    const bool canStageBlankDraft =
+        !shell.loadCatalogWorld && selectedTemplate != nullptr
+        && selectedTemplate->id == std::string_view{"pandora_blank_baseplate"};
+    ImGui::BeginDisabled(!canStageBlankDraft);
+    if (ImGui::Button("BUILD DRAFT", {118.0F, 0.0F})) {
+        editor.return_to_launcher();
+        if (!editor.select_template(selectedTemplateIndex)) {
+            set_status(shell, "The selected package draft is no longer available.");
+        } else {
+            const workspace::LaunchResult result = editor.stage_selected_template_package();
+            set_status(
+                shell, "%.*s", static_cast<int>(result.message.size()), result.message.data());
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Stage the sky-and-baseplate Pandora package draft\n"
+                          "Promotion still requires Destiny to be closed");
+    }
 }
 
 class StyleScope final {
@@ -1783,6 +2688,11 @@ void draw_icon(ImDrawList* draw, Icon icon, ImVec2 center, ImU32 color) {
     case Icon::duplicate:
         draw->AddRect({x - 8, y - 8}, {x + 4, y + 5}, color, 0.0F, 0, 1.3F);
         draw->AddRect({x - 3, y - 3}, {x + 9, y + 9}, color, 0.0F, 0, 1.3F);
+        break;
+    case Icon::group:
+        draw->AddRect({x - 9, y - 7}, {x - 1, y + 2}, color, 0.0F, 0, 1.3F);
+        draw->AddRect({x + 1, y - 2}, {x + 9, y + 7}, color, 0.0F, 0, 1.3F);
+        draw->AddLine({x - 1, y - 1}, {x + 2, y + 1}, color, 1.3F);
         break;
     case Icon::remove:
     case Icon::close:
@@ -1923,6 +2833,16 @@ void draw_ribbon(ShellState& shell, workspace::EditorWorkspace& editor) {
             quick_load(shell);
         }
         ImGui::SameLine(96.0F);
+        ImGui::BeginDisabled(shell.pendingAuthoredEdits == 0 || shell.staleAuthoredEdits != 0);
+        if (ImGui::Button("STAGE MAP", {110.0F, 0.0F})) {
+            (void)stage_pending_authored_edits(shell);
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip(
+                "Build a fail-closed Pandora package from persistent authored-row edits");
+        }
+        ImGui::SameLine(216.0F);
         draw_world_template_loader(shell, editor);
         break;
     case RibbonTab::home:
@@ -1974,6 +2894,22 @@ void draw_ribbon(ShellState& shell, workspace::EditorWorkspace& editor) {
                         false,
                         selected_actor_can_duplicate(shell))) {
             duplicate_selected(shell);
+        }
+        ImGui::SameLine();
+        if (icon_button("##group",
+                        Icon::group,
+                        "Group Selected Objects",
+                        false,
+                        can_group_selection(shell))) {
+            group_selected_actors(shell);
+        }
+        ImGui::SameLine();
+        if (icon_button("##save_group_asset",
+                        Icon::save,
+                        "Save Selection as Persistent Combined Asset",
+                        false,
+                        can_save_group_asset(shell))) {
+            save_selected_group_asset(shell);
         }
         ImGui::SameLine();
         if (icon_button("##remove_native",
@@ -2138,7 +3074,8 @@ void draw_asset_filter_panel(ShellState& shell) {
     }
 
     std::vector<std::string_view> sources;
-    sources.reserve(shell.assets.size());
+    sources.reserve(shell.assets.size() + 1);
+    sources.emplace_back("Izanami Groups");
     for (const AssetRecord& asset : shell.assets) {
         if (asset.packageFamily[0] != '\0') {
             sources.emplace_back(asset.packageFamily.data());
@@ -2286,6 +3223,7 @@ void draw_asset_tile(ShellState& shell, const AssetRecord& asset, ImVec2 size) {
     draw->PopClipRect();
     if (clicked) {
         shell.selectedAssetTag = asset.tag;
+        shell.selectedGroupAsset = (std::numeric_limits<std::size_t>::max)();
         clear_actor_selection(shell);
         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             queue_camera_spawn(shell, asset);
@@ -2363,9 +3301,73 @@ void draw_asset_tile(ShellState& shell, const AssetRecord& asset, ImVec2 size) {
     ImGui::PopID();
 }
 
+void draw_group_asset_tile(ShellState& shell,
+                           std::size_t index,
+                           const group_recipe::GroupAsset& group,
+                           ImVec2 size) {
+    ImGui::PushID(static_cast<int>(index));
+    ImGui::InvisibleButton("combined_asset", size);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    const bool selected = shell.selectedGroupAsset == index;
+    const ImVec2 minimum = ImGui::GetItemRectMin();
+    const ImVec2 maximum = ImGui::GetItemRectMax();
+    ImDrawList* const draw = ImGui::GetWindowDrawList();
+    const ImU32 background = hovered ? IM_COL32(57, 70, 73, 248) : IM_COL32(37, 48, 52, 248);
+    draw->AddRectFilled(minimum, maximum, background);
+    draw->AddRect(minimum,
+                  maximum,
+                  selected ? IM_COL32(220, 183, 88, 245) : IM_COL32(90, 130, 137, 230),
+                  0.0F,
+                  0,
+                  selected ? 2.0F : 1.0F);
+    draw->PushClipRect(
+        {minimum.x + 8.0F, minimum.y + 8.0F}, {maximum.x - 8.0F, minimum.y + 35.0F}, true);
+    draw->AddText(
+        {minimum.x + 8.0F, minimum.y + 13.0F}, IM_COL32(229, 233, 232, 245), group.name.c_str());
+    draw->PopClipRect();
+    draw->AddLine({minimum.x + 8.0F, minimum.y + 38.0F},
+                  {maximum.x - 8.0F, minimum.y + 38.0F},
+                  IM_COL32(135, 123, 90, 190));
+    draw->AddText(
+        {minimum.x + 8.0F, maximum.y - 33.0F}, IM_COL32(225, 188, 92, 240), "COMBINED ASSET");
+    std::array<char, 48> count{};
+    (void)std::snprintf(count.data(), count.size(), "%zu objects", group.actors.size());
+    draw->AddText(
+        {minimum.x + 8.0F, maximum.y - 18.0F}, IM_COL32(130, 137, 138, 230), count.data());
+    if (clicked) {
+        shell.selectedGroupAsset = index;
+        shell.selectedAssetTag = 0;
+        clear_actor_selection(shell);
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            queue_group_asset(shell, group);
+        }
+    }
+    if (hovered
+        && ImGui::IsItemHovered(ImGuiHoveredFlags_Stationary | ImGuiHoveredFlags_DelayNormal)
+        && ImGui::BeginTooltip()) {
+        ImGui::TextUnformatted(group.name.c_str());
+        ImGui::Separator();
+        ImGui::Text("Objects           %zu", group.actors.size());
+        ImGui::TextUnformatted("Source            Persistent Izanami group library");
+        ImGui::TextWrapped("Double-click to spawn the complete group at the camera while "
+                           "preserving relative transforms.");
+        ImGui::EndTooltip();
+    }
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        ImGui::SetDragDropPayload(kGroupAssetPayload, &index, sizeof(index));
+        ImGui::TextUnformatted(group.name.c_str());
+        ImGui::EndDragDropSource();
+    }
+    ImGui::PopID();
+}
+
 void draw_asset_browser(ShellState& shell) {
     if (!shell.catalogScanned) {
         refresh_catalog(shell);
+    }
+    if (!shell.groupAssetsLoaded) {
+        refresh_group_assets(shell);
     }
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.025F, 0.03F, 0.033F, 0.97F});
     ImGui::BeginChild("forge_asset_browser", {0.0F, 0.0F}, true);
@@ -2392,6 +3394,22 @@ void draw_asset_browser(ShellState& shell) {
     draw_asset_filter_panel(shell);
 
     const std::string filter = lowercase(shell.assetFilter);
+    std::vector<std::size_t> visibleGroups;
+    const bool groupSourceMatches =
+        shell.assetSourceFilter[0] == '\0'
+        || std::strcmp(shell.assetSourceFilter.data(), "Izanami Groups") == 0;
+    const bool groupScopeMatches =
+        shell.assetScope == AssetScope::all || shell.assetScope == AssetScope::renamed;
+    if (shell.typeFilter < 0 && shell.assetAvailability != AssetAvailability::nonresident
+        && groupSourceMatches && groupScopeMatches) {
+        for (std::size_t index = 0; index < shell.groupAssets.size(); ++index) {
+            const auto& group = shell.groupAssets[index];
+            if (contains_lower(group.name, filter) || contains_lower("combined group asset", filter)
+                || contains_lower("izanami groups", filter)) {
+                visibleGroups.push_back(index);
+            }
+        }
+    }
     std::vector<std::size_t> visible;
     visible.reserve(shell.assets.size());
     for (std::size_t index = 0; index < shell.assets.size(); ++index) {
@@ -2461,7 +3479,8 @@ void draw_asset_browser(ShellState& shell) {
                 return equal ? left.tag < right.tag : less;
             });
     }
-    ImGui::TextDisabled("%zu / %zu   RESIDENT %zu%s",
+    ImGui::TextDisabled("%zu GROUPS   %zu / %zu OBJECTS   RESIDENT %zu%s",
+                        visibleGroups.size(),
                         visible.size(),
                         shell.assets.size(),
                         shell.catalogResidentCount,
@@ -2470,6 +3489,18 @@ void draw_asset_browser(ShellState& shell) {
     constexpr int columns = 2;
     const float tileWidth = (ImGui::GetContentRegionAvail().x - 6.0F) / columns;
     constexpr float tileHeight = 92.0F;
+    for (std::size_t index = 0; index < visibleGroups.size(); ++index) {
+        if (index % columns != 0) {
+            ImGui::SameLine();
+        }
+        draw_group_asset_tile(shell,
+                              visibleGroups[index],
+                              shell.groupAssets[visibleGroups[index]],
+                              {tileWidth, tileHeight});
+    }
+    if (!visibleGroups.empty() && !visible.empty()) {
+        ImGui::Separator();
+    }
     const int rows = static_cast<int>((visible.size() + columns - 1) / columns);
     ImGuiListClipper clipper;
     clipper.Begin(rows, tileHeight + 6.0F);
@@ -2497,26 +3528,35 @@ void draw_asset_browser(ShellState& shell) {
     if (filter.empty()) {
         return true;
     }
-    std::array<char, 32> identity{};
+    std::array<char, 96> identity{};
     (void)std::snprintf(identity.data(),
                         identity.size(),
-                        "%08x %08x",
+                        "%08x %08x %08x %08x %08x",
                         static_cast<unsigned>(actor.tag),
-                        static_cast<unsigned>(actor.handle));
-    return contains_lower(actor.name, filter)
+                        static_cast<unsigned>(actor.handle),
+                        static_cast<unsigned>(actor.tableTag),
+                        static_cast<unsigned>(actor.resourceClass),
+                        static_cast<unsigned>(actor.dataTag));
+    const bool authoredMatch =
+        actor.source == ActorSource::authoredMap
+        && (contains_lower(authored_kind_name(actor.authoredKind), filter)
+            || (actor.resourceClass != 0
+                && contains_lower(authored_resource_class_name(actor.resourceClass), filter)));
+    return contains_lower(actor.name, filter) || authoredMatch
            || contains_lower(research::native_object_type_name(actor.objectType), filter)
            || contains_lower(identity.data(), filter);
 }
 
 void append_actor_order(const ShellState& shell,
+                        ActorSource source,
                         std::uint64_t parentId,
                         std::vector<std::uint64_t>& order) {
     for (const TrackedActor& actor : shell.actors) {
-        if (actor.source != ActorSource::forge || actor.parentId != parentId) {
+        if (actor.source != source || actor.parentId != parentId) {
             continue;
         }
         order.push_back(actor.editorId);
-        append_actor_order(shell, actor.editorId, order);
+        append_actor_order(shell, source, actor.editorId, order);
     }
 }
 
@@ -2532,12 +3572,9 @@ void append_actor_order(const ShellState& shell,
         }
         return order;
     }
-    append_actor_order(shell, 0, order);
-    for (const TrackedActor& actor : shell.actors) {
-        if (actor.source != ActorSource::forge) {
-            order.push_back(actor.editorId);
-        }
-    }
+    append_actor_order(shell, ActorSource::forge, 0, order);
+    append_actor_order(shell, ActorSource::liveMap, 0, order);
+    append_actor_order(shell, ActorSource::authoredMap, 0, order);
     return order;
 }
 
@@ -2583,7 +3620,7 @@ void select_actor_from_explorer(ShellState& shell,
 
 [[nodiscard]] bool has_children(const ShellState& shell, std::uint64_t parentId) noexcept {
     return std::any_of(shell.actors.begin(), shell.actors.end(), [parentId](const auto& actor) {
-        return actor.source == ActorSource::forge && actor.parentId == parentId;
+        return actor.parentId == parentId;
     });
 }
 
@@ -2619,7 +3656,7 @@ void draw_actor_node(ShellState& shell,
                      TrackedActor& actor,
                      const std::vector<std::uint64_t>& order) {
     const bool editableHierarchy = actor.source == ActorSource::forge;
-    const bool children = editableHierarchy && has_children(shell, actor.editorId);
+    const bool children = has_children(shell, actor.editorId);
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanFullWidth;
     if (actor_selected(shell, actor.editorId)) {
         flags |= ImGuiTreeNodeFlags_Selected;
@@ -2628,11 +3665,26 @@ void draw_actor_node(ShellState& shell,
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
     std::array<char, 256> label{};
-    if (actor.source == ActorSource::authoredMap) {
+    if (actor.virtualGroup) {
         (void)std::snprintf(label.data(),
                             label.size(),
-                            "%s  [%08X:%u]##%llu",
+                            "%s  [GROUP]##%llu",
                             actor.name.c_str(),
+                            static_cast<unsigned long long>(actor.editorId));
+    } else if (actor.source == ActorSource::authoredMap) {
+        (void)std::snprintf(label.data(),
+                            label.size(),
+                            "%s%s%s%s  [%08X:%u]##%llu",
+                            actor.name.c_str(),
+                            actor.authoredLiveBound ? "  [LIVE]" : "",
+                            actor.authoredHidden ? "  [HIDDEN NEXT LOAD]" : "",
+                            !actor.authoredHidden && authored_edit_pending(actor)
+                                ? (actor.authoredKind
+                                           == runtime::custom_package_builder::
+                                                  AuthoredPlacementKind::staticAggregate
+                                       ? "  [RELOAD]"
+                                       : "  [SAVED / RELOAD]")
+                                : "",
                             static_cast<unsigned>(actor.tableTag),
                             static_cast<unsigned>(actor.entryIndex),
                             static_cast<unsigned long long>(actor.editorId));
@@ -2689,10 +3741,67 @@ void draw_actor_group(ShellState& shell,
     ImGui::TreePop();
 }
 
+void draw_authored_kind_group(ShellState& shell,
+                              const char* label,
+                              runtime::custom_package_builder::AuthoredPlacementKind kind,
+                              const std::vector<std::uint64_t>& order) {
+    const std::size_t count = static_cast<std::size_t>(
+        std::count_if(shell.actors.begin(), shell.actors.end(), [kind](const auto& actor) {
+            return actor.source == ActorSource::authoredMap && actor.parentId == 0
+                   && actor.authoredKind == kind;
+        }));
+    if (count == 0) {
+        return;
+    }
+    std::array<char, 96> heading{};
+    (void)std::snprintf(heading.data(), heading.size(), "%s  (%zu)", label, count);
+    const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen
+                                     | ImGuiTreeNodeFlags_SpanFullWidth
+                                     | ImGuiTreeNodeFlags_OpenOnArrow;
+    if (!ImGui::TreeNodeEx(heading.data(), flags)) {
+        return;
+    }
+    for (TrackedActor& actor : shell.actors) {
+        if (actor.source == ActorSource::authoredMap && actor.parentId == 0
+            && actor.authoredKind == kind) {
+            draw_actor_node(shell, actor, order);
+        }
+    }
+    ImGui::TreePop();
+}
+
+void draw_authored_world(ShellState& shell,
+                         std::size_t authoredCount,
+                         const std::vector<std::uint64_t>& order) {
+    std::array<char, 160> heading{};
+    (void)std::snprintf(heading.data(),
+                        heading.size(),
+                        "AUTHORED WORLD  (%zu rows / %zu mesh instances)%s",
+                        shell.authoredScan.placementRows,
+                        shell.authoredScan.staticInstances,
+                        shell.authoredScan.truncated ? "  [TRUNCATED]" : "");
+    const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen
+                                     | ImGuiTreeNodeFlags_SpanFullWidth
+                                     | ImGuiTreeNodeFlags_OpenOnArrow;
+    if (authoredCount == 0 || !ImGui::TreeNodeEx(heading.data(), flags)) {
+        return;
+    }
+    using Kind = runtime::custom_package_builder::AuthoredPlacementKind;
+    draw_authored_kind_group(shell, "STATIC GEOMETRY", Kind::staticAggregate, order);
+    draw_authored_kind_group(shell, "SKY", Kind::sky, order);
+    draw_authored_kind_group(shell, "COLLISION", Kind::collision, order);
+    draw_authored_kind_group(shell, "ENTITIES", Kind::entity, order);
+    draw_authored_kind_group(shell, "VISIBILITY", Kind::visibility, order);
+    draw_authored_kind_group(shell, "ENTITY MODELS", Kind::entityModel, order);
+    draw_authored_kind_group(shell, "COMPONENTS / SCENERY", Kind::component, order);
+    draw_authored_kind_group(shell, "UNCLASSIFIED RESOURCES", Kind::resource, order);
+    ImGui::TreePop();
+}
+
 void draw_explorer(ShellState& shell) {
     ImGui::TextUnformatted("EXPLORER");
     ImGui::SameLine(ImGui::GetContentRegionMax().x - 42.0F);
-    if (icon_button("##explorer_refresh", Icon::refresh, "Refresh Live Map Objects")) {
+    if (icon_button("##explorer_refresh", Icon::refresh, "Refresh Live and Authored World")) {
         refresh_world_objects(shell);
     }
     const ImVec2 line = ImGui::GetCursorScreenPos();
@@ -2706,9 +3815,12 @@ void draw_explorer(ShellState& shell) {
                              sizeof(shell.explorerFilter));
     ImGui::BeginChild("explorer_tree_scroll", {0.0F, 0.0F}, false);
     if (ImGui::Selectable("WORLD ROOT",
-                          shell.selectedActorIds.empty() && shell.selectedAssetTag == 0)) {
+                          shell.selectedActorIds.empty() && shell.selectedAssetTag == 0
+                              && shell.selectedGroupAsset
+                                     == (std::numeric_limits<std::size_t>::max)())) {
         clear_actor_selection(shell);
         shell.selectedAssetTag = 0;
+        shell.selectedGroupAsset = (std::numeric_limits<std::size_t>::max)();
     }
     actor_drag_target(shell, 0);
     const std::string filter = lowercase(shell.explorerFilter);
@@ -2724,9 +3836,8 @@ void draw_explorer(ShellState& shell) {
             }));
         const std::size_t authoredMapCount = shell.actors.size() - forgeCount - liveMapCount;
         draw_actor_group(shell, "FORGE OBJECTS", ActorSource::forge, forgeCount, order);
-        draw_actor_group(shell, "LIVE MAP OBJECTS", ActorSource::liveMap, liveMapCount, order);
-        draw_actor_group(
-            shell, "AUTHORED STATIC PLACEMENTS", ActorSource::authoredMap, authoredMapCount, order);
+        draw_actor_group(shell, "LIVE ENTITY DATUMS", ActorSource::liveMap, liveMapCount, order);
+        draw_authored_world(shell, authoredMapCount, order);
     } else {
         for (TrackedActor& actor : shell.actors) {
             if (!actor_matches(actor, filter)) {
@@ -2774,6 +3885,18 @@ void draw_properties(ShellState& shell) {
     TrackedActor* actor = find_actor(shell, shell.selectedActorId);
     sync_rename(shell, actor);
     if (actor == nullptr) {
+        if (shell.selectedGroupAsset < shell.groupAssets.size()) {
+            const auto& group = shell.groupAssets[shell.selectedGroupAsset];
+            ImGui::TextWrapped("%s", group.name.c_str());
+            ImGui::TextUnformatted("Type      Combined group asset");
+            ImGui::Text("Objects   %zu", group.actors.size());
+            ImGui::TextUnformatted("Storage   Persistent Fate group library");
+            ImGui::Spacing();
+            if (ImGui::Button("Spawn Combined Asset", {-1.0F, 0.0F})) {
+                queue_group_asset(shell, group);
+            }
+            return;
+        }
         if (const AssetRecord* const asset = find_asset(shell, shell.selectedAssetTag);
             asset != nullptr) {
             const std::string_view customName = custom_asset_name(shell, asset->tag);
@@ -2815,28 +3938,83 @@ void draw_properties(ShellState& shell) {
         && shell.renameBuffer[0] != '\0') {
         actor->name = shell.renameBuffer;
     }
-    ImGui::Text("Tag       %08X", static_cast<unsigned>(actor->tag));
-    ImGui::Text("Handle    %08X", static_cast<unsigned>(actor->handle));
-    const std::string_view type = research::native_object_type_name(actor->objectType);
-    ImGui::Text("Type      %.*s", static_cast<int>(type.size()), type.data());
-    if (actor->source == ActorSource::liveMap) {
+    if (actor->virtualGroup) {
+        ImGui::TextUnformatted("Type      Editor group root");
+        ImGui::Text("Members   %zu", group_member_ids(shell, actor->editorId).size());
+        ImGui::TextUnformatted("Source    Forge hierarchy");
+    } else if (actor->source == ActorSource::authoredMap) {
+        ImGui::Text("Tag       %08X", static_cast<unsigned>(actor->tag));
+        ImGui::Text("Kind      %s", authored_kind_name(actor->authoredKind));
+        if (actor->authoredObjectTypeKnown) {
+            const std::string_view type = research::native_object_type_name(actor->objectType);
+            ImGui::Text("Object    %.*s", static_cast<int>(type.size()), type.data());
+        }
+    } else {
+        ImGui::Text("Tag       %08X", static_cast<unsigned>(actor->tag));
+        ImGui::Text("Handle    %08X", static_cast<unsigned>(actor->handle));
+        const std::string_view type = research::native_object_type_name(actor->objectType);
+        ImGui::Text("Type      %.*s", static_cast<int>(type.size()), type.data());
+    }
+    if (!actor->virtualGroup && actor->source == ActorSource::liveMap) {
         ImGui::TextUnformatted("Source    Live map datum");
         ImGui::Text("Identity  %s", world_identity_text(actor->identity));
-    } else if (actor->source == ActorSource::authoredMap) {
+    } else if (!actor->virtualGroup && actor->source == ActorSource::authoredMap) {
         ImGui::TextUnformatted("Source    Authored package placement");
+        if (actor->authoredLiveBound) {
+            ImGui::Text("Handle    %08X (live bound)", static_cast<unsigned>(actor->handle));
+            ImGui::Text("Identity  %s", world_identity_text(actor->identity));
+        }
         ImGui::Text("Table     %08X", static_cast<unsigned>(actor->tableTag));
         ImGui::Text("Entry     %u", static_cast<unsigned>(actor->entryIndex));
-        ImGui::Text("Parent    %08X", static_cast<unsigned>(actor->parentTag));
-    } else {
+        ImGui::Text("Entity    %08X", static_cast<unsigned>(actor->authoredEntityTag));
+        ImGui::Text("World     %016llX",
+                    static_cast<unsigned long long>(actor->authoredWorldId));
+        if (actor->resourceClass != 0) {
+            ImGui::Text("Class     %08X (%s)",
+                        static_cast<unsigned>(actor->resourceClass),
+                        authored_resource_class_name(actor->resourceClass));
+        }
+        if (actor->resourceTag != 0) {
+            ImGui::Text("Resource  %08X", static_cast<unsigned>(actor->resourceTag));
+        }
+        if (actor->dataTag != 0) {
+            ImGui::Text("Payload   %08X", static_cast<unsigned>(actor->dataTag));
+            ImGui::Text("Data      %zu bytes", actor->authoredDataBytes);
+        }
+        if (actor->authoredKind
+            == runtime::custom_package_builder::AuthoredPlacementKind::staticInstance) {
+            ImGui::Text("Mesh      %08X", static_cast<unsigned>(actor->tag));
+            ImGui::Text("Group     %u", static_cast<unsigned>(actor->groupIndex));
+            ImGui::Text("Transform %u", static_cast<unsigned>(actor->transformIndex));
+        }
+        ImGui::Text(
+            "Edit      %s",
+            actor->authoredHidden
+                ? (actor->authoredLiveBound ? "Hidden live and on next load"
+                                            : "Hidden on next load")
+                : (authored_edit_pending(*actor)
+                       ? (actor->authoredLiveBound ? "Live with persistent edit"
+                                                   : "Saved; reload required")
+                       : (actor->authoredLiveBound
+                              ? "Live editable"
+                              : (actor->authoredStageEditable ? "Source state" : "Catalog only"))));
+    } else if (!actor->virtualGroup) {
         ImGui::TextUnformatted("Source    Forge-created");
         ImGui::Text("State     %s", actor->nativeExpired ? "Expired by Destiny" : "Live");
     }
     ImGui::Spacing();
     if (!actor->transformKnown) {
-        ImGui::TextWrapped(
-            "Native transform readback is not decoded for imported map objects. Identity and "
-            "selection are available; transform, duplicate, and save remain gated. Object types "
-            "with the recovered activation transform path can be removed until the world reloads.");
+        if (actor->source == ActorSource::authoredMap) {
+            ImGui::TextWrapped(
+                "This package resource has no validated instance transform or live native "
+                "binding. It remains visible in Explorer as a read-only authored row.");
+        } else {
+            ImGui::TextWrapped(
+                "Native transform readback is not decoded for imported map objects. Identity and "
+                "selection are available; transform, duplicate, and save remain gated. Object "
+                "types with the recovered activation transform path can be removed until the "
+                "world reloads.");
+        }
         ImGui::Spacing();
     }
     if (actor->nativeExpired) {
@@ -2845,8 +4023,10 @@ void draw_properties(ShellState& shell) {
             "record; Duplicate can create a fresh instance.");
         ImGui::Spacing();
     }
-    ImGui::BeginDisabled(!actor->transformKnown || actor->nativeExpired
-                         || actor->source == ActorSource::authoredMap);
+    const bool transformEditable =
+        actor->transformKnown && !actor->nativeExpired
+        && (actor->source != ActorSource::authoredMap || authored_transform_editable(*actor));
+    ImGui::BeginDisabled(!transformEditable);
     float position[3]{actor->transform.translation.x,
                       actor->transform.translation.y,
                       actor->transform.translation.z};
@@ -2868,11 +4048,68 @@ void draw_properties(ShellState& shell) {
     if (ImGui::InputFloat(
             "Scale", &scale, 0.1F, 1.0F, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)) {
         core::Transform transform = actor->transform;
-        transform.uniformScale = (std::clamp)(scale, 0.05F, 100.0F);
+        const float minimumScale = actor->source == ActorSource::authoredMap ? 0.0001F : 0.05F;
+        transform.uniformScale = (std::clamp)(scale, minimumScale, 100.0F);
         write_actor_transform(shell, *actor, transform, true);
     }
+    ImGui::TextDisabled(actor->source == ActorSource::authoredMap
+                            ? (actor->authoredLiveBound
+                                   ? "Native scale is uniform and updates live; writable Pandora "
+                                     "rows are also saved for persistence."
+                                   : "Static scene rows are batched; package edits apply after "
+                                     "staging and reload.")
+                            : "Native object scale is uniform; independent XYZ scale is not "
+                              "decoded.");
     ImGui::EndDisabled();
     ImGui::Spacing();
+    if (actor->source == ActorSource::authoredMap) {
+        if (!authored_transform_editable(*actor)) {
+            ImGui::TextWrapped(
+                "This row has no correlated native datum. Static geometry and dependent package "
+                "rows remain read-only live until their renderer instance path is decoded.");
+        } else {
+            ImGui::BeginDisabled(actor->authoredHidden);
+            if (ImGui::Button(actor->authoredLiveBound ? "Hide Live" : "Hide on Next Load",
+                              {-1.0F, 0.0F})) {
+                (void)hide_authored_actor(shell, *actor);
+            }
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(!authored_edit_pending(*actor));
+            if (ImGui::Button("Revert Pending Edit", {-1.0F, 0.0F})) {
+                write_actor_transform(shell, *actor, actor->authoredSourceTransform, true);
+            }
+            ImGui::EndDisabled();
+            if (actor->authoredStageEditable) {
+                ImGui::BeginDisabled(shell.pendingAuthoredEdits == 0
+                                     || shell.staleAuthoredEdits != 0);
+                std::array<char, 96> stageLabel{};
+                (void)std::snprintf(stageLabel.data(),
+                                    stageLabel.size(),
+                                    "Stage %zu Pending Edit%s",
+                                    shell.pendingAuthoredEdits,
+                                    shell.pendingAuthoredEdits == 1 ? "" : "s");
+                if (ImGui::Button(stageLabel.data(), {-1.0F, 0.0F})) {
+                    (void)stage_pending_authored_edits(shell);
+                }
+                ImGui::EndDisabled();
+            }
+            ImGui::TextWrapped(actor->authoredLiveBound
+                                   ? (actor->authoredStageEditable
+                                          ? "Changes are applied to the current native object and "
+                                            "saved as a persistent Pandora edit."
+                                          : "Changes are live for this session; persistence for "
+                                            "this package is not implemented yet.")
+                                   : "This package placement has no live native binding. Its "
+                                     "saved change still requires staging and a world reload.");
+        }
+        ImGui::Spacing();
+    }
+    if (actor->virtualGroup) {
+        if (ImGui::Button("Save as Combined Asset", {-1.0F, 0.0F})) {
+            save_selected_group_asset(shell);
+        }
+        ImGui::Spacing();
+    }
     if (icon_button("##property_duplicate",
                     Icon::duplicate,
                     "Duplicate Selected",
@@ -3064,14 +4301,6 @@ void consider_gizmo_segment(GizmoHit& hit,
     hit.distance = distance;
 }
 
-[[nodiscard]] core::Quat multiply_quaternion(const core::Quat& left,
-                                             const core::Quat& right) noexcept {
-    return {left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-            left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-            left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-            left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z};
-}
-
 [[nodiscard]] core::Quat local_axis_rotation(std::size_t axis, float radians) noexcept {
     const float half = radians * 0.5F;
     const float sine = std::sin(half);
@@ -3093,9 +4322,20 @@ void finish_gizmo_drag(ShellState& shell) {
     }
     if (TrackedActor* const actor = find_actor(shell, shell.gizmoDrag.actorId);
         actor != nullptr && !same_transform(shell.gizmoDrag.startTransform, actor->transform)) {
+        if (actor->source == ActorSource::authoredMap && actor->authoredStageEditable
+            && !persist_authored_edits(shell)) {
+            set_status(shell,
+                       "Live transform completed, but its persistent authored recipe did not "
+                       "save.");
+        } else {
+            set_status(shell,
+                       actor->source == ActorSource::authoredMap && actor->authoredLiveBound
+                           ? "Live transform committed for %s."
+                           : "Transform committed for %s.",
+                       actor->name.c_str());
+        }
         shell.undo.push_back({actor->editorId, shell.gizmoDrag.startTransform, actor->transform});
         shell.redo.clear();
-        set_status(shell, "Transform committed for %s.", actor->name.c_str());
     }
     shell.gizmoDrag = {};
 }
@@ -3291,7 +4531,8 @@ void draw_selected_actor_gizmo(ShellState& shell,
                                ImVec2 viewportMaximum,
                                bool viewportHovered) {
     TrackedActor* actor = find_actor(shell, shell.selectedActorId);
-    if (actor == nullptr || !actor->transformKnown || actor->nativeExpired) {
+    if (actor == nullptr || !actor->transformKnown || actor->nativeExpired
+        || (actor->source == ActorSource::authoredMap && !authored_transform_editable(*actor))) {
         service_gizmo_drag(shell);
         return;
     }
@@ -3370,6 +4611,14 @@ void draw_live_viewport(ShellState& shell) {
             std::memcpy(&tag, payload->Data, sizeof(tag));
             if (const AssetRecord* const asset = find_asset(shell, tag); asset != nullptr) {
                 queue_camera_spawn(shell, *asset);
+            }
+        }
+        if (const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(kGroupAssetPayload);
+            payload != nullptr && payload->DataSize == sizeof(std::size_t)) {
+            std::size_t index = 0;
+            std::memcpy(&index, payload->Data, sizeof(index));
+            if (index < shell.groupAssets.size()) {
+                queue_group_asset(shell, shell.groupAssets[index]);
             }
         }
         ImGui::EndDragDropTarget();
@@ -3469,11 +4718,16 @@ void draw_output(ShellState& shell) {
                 outcome.data(),
                 static_cast<unsigned>(observation.tag),
                 static_cast<unsigned>(observation.handle));
-    ImGui::Text("Map scan: %zu matched / %zu live / %zu ambiguous / %zu unstable",
+    ImGui::Text("Map: %zu matched / %zu live / %zu transforms / %zu authored bindings / "
+                "%zu rows + %zu meshes / %zu tables / %zu pending",
                 shell.worldScan.matchedObjects,
                 shell.worldScan.liveHandles,
-                shell.worldScan.ambiguousObjects,
-                shell.worldScan.unstableObjects);
+                shell.liveEditableMapObjects,
+                shell.liveBoundAuthoredObjects,
+                shell.authoredScan.placementRows,
+                shell.authoredScan.staticInstances,
+                shell.authoredScan.mapTables,
+                shell.pendingAuthoredEdits);
     ImGui::EndChild();
     ImGui::PopStyleColor();
 }
@@ -3492,13 +4746,15 @@ void draw_status_bar(ShellState& shell) {
         std::count_if(shell.actors.begin(), shell.actors.end(), [](const auto& actor) {
             return actor.source == ActorSource::authoredMap;
         }));
-    ImGui::Text("FORGE %zu   LIVE %zu   AUTHORED %zu   REMOVED %zu   QUEUED %zu   NATIVE %s",
-                shell.actors.size() - liveMapCount - authoredMapCount,
-                liveMapCount,
-                authoredMapCount,
-                shell.quarantinedActors.size(),
-                shell.spawnQueue.size(),
-                native_spawn::ready() ? "READY" : "OFFLINE");
+    ImGui::Text(
+        "FORGE %zu   LIVE %zu   AUTHORED %zu   PENDING %zu   REMOVED %zu   QUEUED %zu   NATIVE %s",
+        shell.actors.size() - liveMapCount - authoredMapCount,
+        liveMapCount,
+        authoredMapCount,
+        shell.pendingAuthoredEdits,
+        shell.quarantinedActors.size(),
+        shell.spawnQueue.size(),
+        native_spawn::ready() ? "READY" : "OFFLINE");
     ImGui::EndChild();
     ImGui::PopStyleColor();
 }

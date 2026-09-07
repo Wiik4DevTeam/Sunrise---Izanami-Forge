@@ -169,12 +169,16 @@ struct RefreshReport final {
 client_placement(const Session& session, const RefreshReport* refresh) noexcept;
 
 /**
- * Tests whether the client is in a live world: it holds the region it reported and no host
- * move is waiting for its arrival.
+ * Tests whether WS-702 reported world arrival while the destination region is instantiated.
+ * This releases the native spawn gate after the transition fade has armed.
  * @param session Connection whose activity session the client reports on.
  * @param refresh Refresh being answered, or null.
  */
 [[nodiscard]] bool client_in_world(const Session& session, const RefreshReport* refresh) noexcept;
+
+/** Tests whether the destination region is instantiated, before the world-arrival report. */
+[[nodiscard]] bool client_region_ready(const Session& session,
+                                       const RefreshReport* refresh) noexcept;
 
 /**
  * Resolves the exact region one selected BAP ActivityClient would put in msg 5.

@@ -30,10 +30,11 @@ constexpr unsigned kByteBits = 8;
 constexpr std::uint16_t kFirstPacketSequence = 1;
 
 /** Fills the address blob that names this host on the direct path. */
-void local_address(std::array<std::byte, wire::kAddressBlobSize>& output) noexcept {
+void local_address(std::uint16_t receivingPort,
+                   std::array<std::byte, wire::kAddressBlobSize>& output) noexcept {
     const gp::Endpoint advertised = endpoint::advertised();
     middleware::gameplay::descriptor::write_direct_net_addr(
-        advertised.address, advertised.port, output);
+        advertised.address, receivingPort != 0 ? receivingPort : advertised.port, output);
 }
 
 /** @return A random 32-bit sequence, or zero when Windows refused. */
@@ -98,7 +99,8 @@ void answer_connect(const gp::Endpoint& from,
     // The peer checks both echoed fields and closes the connection on a wrong sequence.
     response.remoteChannelId = request.channelId;
     response.remoteSequence = request.sequence;
-    local_address(response.address);
+    // The client matches this address to its connecting channel, including the host pool port.
+    local_address(from.localPort, response.address);
     DisplacedExternals displaced{};
     std::size_t displacedCount = 0;
     std::array<std::uint64_t, gp::kSessionsPerLink> resetSessions{};

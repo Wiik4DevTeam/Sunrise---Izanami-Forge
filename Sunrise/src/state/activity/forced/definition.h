@@ -20,6 +20,12 @@ inline constexpr std::uint32_t kDefaultSpawnSetHash = 0x2EA8FB98U;
  */
 inline constexpr std::uint32_t kAbsentSpawnSetHash = 0x811C9DC5U;
 
+/** Controls whether an index-zero request borrows Sunrise's bundled fallback activity. */
+enum class CarrierIdentityPolicy : std::uint8_t {
+    bundledFallback,
+    preserveRequest,
+};
+
 /**
  * One operator-chosen destination that replaces what the client asked for.
  * Nothing here is saved. The process starts with no selection and the switch off.
@@ -42,6 +48,7 @@ struct ForcedDestination {
     bool hasSliceSet{};
     bool hasSpawnSetHash{};
     bool hasActivityIndex{};
+    CarrierIdentityPolicy carrierIdentityPolicy{CarrierIdentityPolicy::bundledFallback};
     /** The global switch. Off means the client's own selection stands. */
     bool enabled{};
 };
@@ -72,7 +79,8 @@ inline constexpr std::uint16_t kMaximumActivityIndex = 0x7FFFU;
     return value.packageNameLength <= value.packageName.size()
            && (!value.hasBubble || value.bubble <= kMaximumBubble)
            && (!value.hasSliceSet || value.sliceSet <= kMaximumSliceSet)
-           && (!value.hasActivityIndex || value.activityIndex <= kMaximumActivityIndex);
+           && (!value.hasActivityIndex || value.activityIndex <= kMaximumActivityIndex)
+           && value.carrierIdentityPolicy <= CarrierIdentityPolicy::preserveRequest;
 }
 
 } // namespace sunrise::state::activity::forced

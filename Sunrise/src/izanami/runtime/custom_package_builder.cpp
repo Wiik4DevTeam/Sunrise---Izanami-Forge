@@ -50,11 +50,6 @@ constexpr std::uint64_t kMaximumPatchBytes = 128ULL * 1024ULL * 1024ULL;
 constexpr int kLzhCompressor = 0;
 constexpr int kKrakenCompressor = 8;
 
-struct StaticTableRedirect {
-    std::uint32_t tableTag{};
-    std::uint32_t originalResourceTag{};
-};
-
 /** One pending edge in the bounded map-root dependency walk. */
 struct MapNode {
     std::uint32_t tag{};
@@ -83,6 +78,25 @@ struct TowerPatchStats {
     std::size_t skippedTables{};
 };
 
+/** Evidence collected while reducing Pandora's VFX-test map branch to an authored draft. */
+struct PandoraSkyDraftStats {
+    std::size_t nodes{};
+    std::size_t tables{};
+    std::size_t placements{};
+    std::size_t suppressedPlacements{};
+    std::size_t preservedSkyPlacements{};
+    std::size_t baseplateTiles{};
+    std::size_t preservedInfrastructurePlacements{};
+    std::size_t touchedTables{};
+    float tileSpacing{};
+};
+
+struct PandoraBaseplateTile {
+    std::uint32_t tableTag{};
+    std::uint32_t sourceParentTag{};
+    float gridOffset{};
+};
+
 struct StandaloneEntityExpectation {
     std::uint8_t objectType{};
     std::size_t expectedPlacements{};
@@ -93,17 +107,22 @@ struct ComponentSceneryClassExpectation {
     std::size_t expectedPlacements{};
 };
 
-/** The tiny six-instance static map that forms the VFX test baseplate. */
-constexpr std::uint32_t kPandoraBaseplateStaticTable = 0x8150E15BU;
-constexpr std::uint32_t kPandoraBaseplateStaticResource = 0x8150E15AU;
-/** The two larger first-bubble scenery tables, and their original static-map parents. */
-constexpr std::array kPandoraStaticTableRedirects{
-    StaticTableRedirect{0x8150E018U, 0x8150E017U},
-    StaticTableRedirect{0x8150E14EU, 0x8150E14DU},
-};
-
 constexpr std::string_view kPandoraMapRoot = "map:pandora:root";
 constexpr std::string_view kTowerMapRoot = "map:city_tower_d2:root";
+constexpr std::uint16_t kPandoraMapPackageId = 0x0687U;
+/** The first Pandora branch contains the resident VFX shade-test map. */
+constexpr std::uint32_t kPandoraVfxMapBranch = 0x8150E00AU;
+constexpr std::uint32_t kPandoraVfxSkyTable = 0x8150E150U;
+constexpr std::uint32_t kPandoraBaseplateStaticTable = 0x8150E15BU;
+/** Three first-bubble aggregate slots form a centered strip without adding package entries. */
+constexpr std::array kPandoraBaseplateTiles{
+    PandoraBaseplateTile{0x8150E018U, 0x8150E017U, -1.0F},
+    PandoraBaseplateTile{kPandoraBaseplateStaticTable, 0x8150E15AU, 0.0F},
+    PandoraBaseplateTile{0x8150E14EU, 0x8150E14DU, 1.0F},
+};
+constexpr std::uint32_t kSkyObjectPlacementResourceClass = 0x80806F91U;
+constexpr std::uint32_t kSkyObjectCollectionClass = 0x80806F95U;
+constexpr std::size_t kSkyObjectCollectionOffset = 0x8;
 constexpr std::uint16_t kTowerMapPackageId = 0x0369U;
 /** Patch 8 is the highest field-proven Tower metadata slot. */
 constexpr std::uint32_t kTowerPatchSlot = 8;
@@ -164,14 +183,18 @@ constexpr float kSuppressedStandaloneEntityHeight = -10000.0F;
 constexpr float kSuppressedStandaloneEntityScale = 0.0001F;
 constexpr std::size_t kMapGraphCapacity = 1024;
 constexpr std::uint8_t kMapGraphDepth = 5;
+constexpr std::size_t kAuthoredCatalogGraphCapacity = 4096;
+constexpr std::uint8_t kAuthoredCatalogGraphDepth = 8;
 constexpr std::size_t kMapTableArrayOffset = 0x8;
 constexpr std::size_t kMapEntryStride = 0x90;
 constexpr std::size_t kMapEntryRotationOffset = 0x10;
 constexpr std::size_t kMapEntryTranslationOffset = 0x20;
+constexpr std::size_t kMapEntryWorldIdOffset = 0x70;
 constexpr std::size_t kMapEntryResourcePointerOffset = 0x78;
 constexpr std::size_t kStaticMapParentOffset = 0x10;
 constexpr std::size_t kMaximumMapEntries = 4096;
 constexpr std::size_t kMaximumPlacementEdits = 32;
+constexpr std::size_t kMaximumAuthoredPlacementEdits = 4096;
 constexpr std::size_t kReportedPlacementCandidates = 12;
 constexpr std::uint32_t kKnownTowerAggregateTable = 0x80ED22FBU;
 constexpr std::uint32_t kKnownTowerAggregateEntry = 0;
@@ -530,6 +553,41 @@ write_value(std::span<std::byte> bytes, std::size_t offset, const Value& value) 
            && read_value(table, resourceOffset - sizeof(resourceClass), resourceClass);
 }
 
+/** Resolves one uniquely typed definition tag embedded in an inline map resource. */
+[[nodiscard]] bool linked_resource_tag(std::span<const std::byte> table,
+                                       std::size_t resourceOffset,
+                                       const reader::Source& source,
+                                       reader::Scratch& scratch,
+                                       std::uint32_t expectedClass,
+                                       std::uint32_t& linkedTag,
+                                       std::vector<std::byte>& linkedBytes) noexcept {
+    linkedTag = 0;
+    linkedBytes.clear();
+    if (resourceOffset > table.size()) {
+        return false;
+    }
+    std::vector<std::byte> candidateBytes{};
+    for (std::size_t offset = resourceOffset; offset + sizeof(std::uint32_t) <= table.size();
+         offset += sizeof(std::uint32_t)) {
+        std::uint32_t candidate = 0;
+        std::uint32_t candidateClass = 0;
+        if (!read_value(table, offset, candidate) || candidate < tables::kTagLowerBound
+            || candidate >= tables::kTagUpperBound
+            || !reader::read_tag(source, scratch, candidate, candidateBytes, candidateClass)
+            || candidateClass != expectedClass) {
+            continue;
+        }
+        if (linkedTag != 0 && linkedTag != candidate) {
+            linkedTag = 0;
+            linkedBytes.clear();
+            return false;
+        }
+        linkedTag = candidate;
+        linkedBytes = candidateBytes;
+    }
+    return linkedTag != 0 && !linkedBytes.empty();
+}
+
 /** Checks that one null-resource map row names an actual entity definition. */
 [[nodiscard]] bool map_entity(std::span<const std::byte> table,
                               std::size_t entryOffset,
@@ -692,6 +750,64 @@ suppressed_component_scenery_class(std::uint32_t resourceClass) noexcept {
     return true;
 }
 
+/** Applies one generic map-row transform only after every cataloged source field still matches. */
+[[nodiscard]] bool apply_authored_placement_edit(std::uint32_t tableTag,
+                                                 std::span<std::byte> table,
+                                                 const AuthoredPlacementEdit& edit) noexcept {
+    if (!edit.binding.is_valid() || edit.binding.tableTag != tableTag
+        || !edit.targetTransform.is_finite() || edit.targetTransform.uniformScale <= 0.0F) {
+        return false;
+    }
+    std::size_t entriesOffset = 0;
+    std::uint32_t entries = 0;
+    if (!map_table_layout(table, entriesOffset, entries) || edit.binding.entryIndex >= entries) {
+        return false;
+    }
+    const std::size_t entryOffset =
+        entriesOffset + static_cast<std::size_t>(edit.binding.entryIndex) * kMapEntryStride;
+    std::uint32_t entityTag = 0;
+    if (!read_value(table, entryOffset, entityTag) || entityTag != edit.entityTag) {
+        return false;
+    }
+
+    if (edit.resourceClass == 0) {
+        std::int64_t resourceRelative = 0;
+        if (!read_value(table, entryOffset + kMapEntryResourcePointerOffset, resourceRelative)
+            || resourceRelative != 0 || edit.resourceTag != entityTag) {
+            return false;
+        }
+    } else {
+        std::size_t resourceOffset = 0;
+        std::uint32_t resourceClass = 0;
+        if (!map_resource(table, entryOffset, resourceOffset, resourceClass)
+            || resourceClass != edit.resourceClass) {
+            return false;
+        }
+        if (edit.resourceTag != 0) {
+            std::size_t tagOffset = 0;
+            if (resourceClass == kStaticMapResourceClass) {
+                tagOffset = kStaticMapParentOffset;
+            } else if (resourceClass == kSkyObjectPlacementResourceClass) {
+                tagOffset = kSkyObjectCollectionOffset;
+            } else {
+                return false;
+            }
+            std::uint32_t resourceTag = 0;
+            if (resourceOffset > table.size()
+                || tagOffset + sizeof(resourceTag) > table.size() - resourceOffset
+                || !read_value(table, resourceOffset + tagOffset, resourceTag)
+                || resourceTag != edit.resourceTag) {
+                return false;
+            }
+        }
+    }
+
+    core::Transform source{};
+    return read_map_transform(table, entryOffset, source)
+           && same_transform(source, edit.binding.sourceTransform)
+           && write_map_transform(table, entryOffset, edit.targetTransform);
+}
+
 /** Resolves an allowlisted replacement through its static-map parent and instances payload. */
 [[nodiscard]] bool validate_static_parent(const reader::Source& source,
                                           reader::Scratch& scratch,
@@ -713,11 +829,13 @@ suppressed_component_scenery_class(std::uint32_t resourceClass) noexcept {
                                       const reader::Source& source,
                                       reader::Scratch& scratch,
                                       std::vector<std::uint32_t>& mapTables,
-                                      TowerPatchStats& stats) noexcept {
+                                      TowerPatchStats& stats,
+                                      std::uint8_t maximumDepth = kMapGraphDepth,
+                                      std::size_t graphCapacity = kMapGraphCapacity) noexcept {
     std::vector<MapNode> queue{};
     std::vector<std::uint32_t> visited{};
-    queue.reserve(kMapGraphCapacity);
-    visited.reserve(kMapGraphCapacity);
+    queue.reserve(graphCapacity);
+    visited.reserve(graphCapacity);
     queue.push_back(MapNode{rootTag, 0});
     std::vector<std::byte> bytes{};
     const auto known = [&queue, &visited](std::uint32_t tag) {
@@ -726,7 +844,7 @@ suppressed_component_scenery_class(std::uint32_t resourceClass) noexcept {
                       return node.tag == tag;
                   }) != queue.end();
     };
-    for (std::size_t cursor = 0; cursor < queue.size() && cursor < kMapGraphCapacity; ++cursor) {
+    for (std::size_t cursor = 0; cursor < queue.size() && cursor < graphCapacity; ++cursor) {
         const MapNode node = queue[cursor];
         if (std::find(visited.begin(), visited.end(), node.tag) != visited.end()) {
             continue;
@@ -739,11 +857,11 @@ suppressed_component_scenery_class(std::uint32_t resourceClass) noexcept {
         if (classId == kMapDataTableClass) {
             mapTables.push_back(node.tag);
         }
-        if (node.depth >= kMapGraphDepth) {
+        if (node.depth >= maximumDepth) {
             continue;
         }
         for (std::size_t offset = 0;
-             offset + sizeof(std::uint32_t) <= bytes.size() && queue.size() < kMapGraphCapacity;
+             offset + sizeof(std::uint32_t) <= bytes.size() && queue.size() < graphCapacity;
              offset += sizeof(std::uint32_t)) {
             std::uint32_t child = 0;
             std::memcpy(&child, bytes.data() + offset, sizeof child);
@@ -755,7 +873,7 @@ suppressed_component_scenery_class(std::uint32_t resourceClass) noexcept {
         const std::uint16_t packageId = tables::package_of(node.tag);
         for (std::size_t offset = 0;
              offset + 2 * sizeof(std::uint32_t) + sizeof(std::uint64_t) <= bytes.size()
-             && queue.size() < kMapGraphCapacity;
+             && queue.size() < graphCapacity;
              offset += sizeof(std::uint32_t)) {
             std::uint32_t isHash32 = 0;
             std::uint64_t hash64 = 0;
@@ -1348,6 +1466,394 @@ struct ShadowkeepArray {
     return found;
 }
 
+[[nodiscard]] core::Quat multiply_quaternion(const core::Quat& left,
+                                             const core::Quat& right) noexcept {
+    return {left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+            left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+            left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+            left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z};
+}
+
+[[nodiscard]] core::Vec3 rotate_vector(const core::Quat& rotation,
+                                       const core::Vec3& value) noexcept {
+    const core::Vec3 doubledCross{2.0F * (rotation.y * value.z - rotation.z * value.y),
+                                  2.0F * (rotation.z * value.x - rotation.x * value.z),
+                                  2.0F * (rotation.x * value.y - rotation.y * value.x)};
+    return {value.x + rotation.w * doubledCross.x + rotation.y * doubledCross.z
+                - rotation.z * doubledCross.y,
+            value.y + rotation.w * doubledCross.y + rotation.z * doubledCross.x
+                - rotation.x * doubledCross.z,
+            value.z + rotation.w * doubledCross.z + rotation.x * doubledCross.y
+                - rotation.y * doubledCross.x};
+}
+
+[[nodiscard]] core::Transform compose_transform(const core::Transform& parent,
+                                                const core::Transform& local) noexcept {
+    const core::Vec3 scaled{local.translation.x * parent.uniformScale,
+                            local.translation.y * parent.uniformScale,
+                            local.translation.z * parent.uniformScale};
+    const core::Vec3 translated = rotate_vector(parent.rotation, scaled);
+    core::Transform world{};
+    world.translation = {parent.translation.x + translated.x,
+                         parent.translation.y + translated.y,
+                         parent.translation.z + translated.z};
+    world.rotation = multiply_quaternion(parent.rotation, local.rotation);
+    world.uniformScale = parent.uniformScale * local.uniformScale;
+    return world;
+}
+
+[[nodiscard]] bool read_static_instance_transform(std::span<const std::byte> payload,
+                                                  const ShadowkeepArray& transforms,
+                                                  std::uint32_t index,
+                                                  core::Transform& transform) noexcept {
+    if (index >= transforms.count) {
+        return false;
+    }
+    const std::size_t offset =
+        transforms.dataOffset + static_cast<std::size_t>(index) * kShadowkeepTransformStride;
+    std::array<float, 4> rotation{};
+    std::array<float, 4> translationScale{};
+    if (!read_value(payload, offset, rotation)
+        || !read_value(payload, offset + 0x10, translationScale)) {
+        return false;
+    }
+    transform.translation = {translationScale[0], translationScale[1], translationScale[2]};
+    transform.rotation = {rotation[0], rotation[1], rotation[2], rotation[3]};
+    transform.uniformScale = translationScale[3];
+    return transform.is_finite() && transform.uniformScale > 0.0F;
+}
+
+/** Derives a conservative tile interval from the six proven baseplate instance centers. */
+[[nodiscard]] bool pandora_baseplate_tile_spacing(const reader::Source& source,
+                                                  reader::Scratch& scratch,
+                                                  float& spacing) noexcept {
+    spacing = 0.0F;
+    std::vector<std::byte> parent{};
+    std::vector<std::byte> payload{};
+    std::uint32_t parentClass = 0;
+    std::uint32_t payloadClass = 0;
+    std::uint32_t payloadTag = 0;
+    if (!reader::read_tag(
+            source, scratch, kPandoraBaseplateStaticParent, parent, parentClass)
+        || parentClass != kStaticMapParentClass || parent.size() < 0xC
+        || !read_value(parent, 0x8, payloadTag)
+        || !reader::read_tag(source, scratch, payloadTag, payload, payloadClass)
+        || payloadClass != kStaticMeshInstancesClass || payload.empty()) {
+        return false;
+    }
+
+    ShadowkeepArray transforms{};
+    ShadowkeepArray statics{};
+    ShadowkeepArray groups{};
+    if (!find_shadowkeep_array(
+            payload, kShadowkeepTransformClass, kShadowkeepTransformStride, transforms)
+        || !find_shadowkeep_array(payload, kShadowkeepStaticClass, kShadowkeepStaticStride, statics)
+        || !find_shadowkeep_array(payload, kShadowkeepGroupClass, kShadowkeepGroupStride, groups)) {
+        return false;
+    }
+
+    std::vector<float> xCoordinates{};
+    std::vector<float> yCoordinates{};
+    for (std::uint32_t groupIndex = 0; groupIndex < groups.count; ++groupIndex) {
+        std::array<std::uint32_t, 2> words{};
+        const std::size_t groupOffset =
+            groups.dataOffset + static_cast<std::size_t>(groupIndex) * kShadowkeepGroupStride;
+        if (!read_value(payload, groupOffset, words)) {
+            return false;
+        }
+        const std::uint32_t transformStart = words[0] >> 16U;
+        const std::uint32_t transformCount = words[1] >> 16U;
+        const std::uint32_t staticIndex = words[1] & 0xFFFFU;
+        if (transformCount == 0 || staticIndex >= statics.count
+            || transformStart > transforms.count
+            || transformCount > transforms.count - transformStart) {
+            return false;
+        }
+        for (std::uint32_t offset = 0; offset < transformCount; ++offset) {
+            core::Transform transform{};
+            if (!read_static_instance_transform(
+                    payload, transforms, transformStart + offset, transform)) {
+                return false;
+            }
+            xCoordinates.push_back(transform.translation.x);
+            yCoordinates.push_back(transform.translation.y);
+        }
+    }
+    if (xCoordinates.size() != 6 || yCoordinates.size() != xCoordinates.size()) {
+        return false;
+    }
+
+    const auto axis_interval = [](std::vector<float> coordinates) {
+        std::sort(coordinates.begin(), coordinates.end());
+        float minimumStep = (std::numeric_limits<float>::max)();
+        for (std::size_t index = 1; index < coordinates.size(); ++index) {
+            const float difference = coordinates[index] - coordinates[index - 1];
+            if (difference > 0.001F) {
+                minimumStep = (std::min)(minimumStep, difference);
+            }
+        }
+        const float span = coordinates.back() - coordinates.front();
+        return minimumStep == (std::numeric_limits<float>::max)() ? 0.0F
+                                                                  : span + minimumStep;
+    };
+    const float xInterval = axis_interval(std::move(xCoordinates));
+    const float yInterval = axis_interval(std::move(yCoordinates));
+    spacing = (std::max)(xInterval, yInterval);
+    if (spacing <= 0.001F) {
+        spacing = 24.0F;
+    }
+    return std::isfinite(spacing) && spacing >= 4.0F && spacing <= 256.0F;
+}
+
+[[nodiscard]] core::Transform tiled_pandora_transform(const core::Transform& baseplate,
+                                                       float spacing,
+                                                       float gridOffset) noexcept {
+    core::Transform result = baseplate;
+    const core::Vec3 localOffset{spacing * gridOffset * baseplate.uniformScale, 0.0F, 0.0F};
+    const core::Vec3 worldOffset = rotate_vector(baseplate.rotation, localOffset);
+    result.translation.x += worldOffset.x;
+    result.translation.y += worldOffset.y;
+    result.translation.z += worldOffset.z;
+    return result;
+}
+
+[[nodiscard]] AuthoredPlacementKind authored_resource_kind(std::uint32_t resourceClass) noexcept {
+    if (resourceClass == kStaticMapResourceClass) {
+        return AuthoredPlacementKind::staticAggregate;
+    }
+    if (resourceClass == kSkyObjectPlacementResourceClass) {
+        return AuthoredPlacementKind::sky;
+    }
+    if (resourceClass == kTowerVisibilityBundleResourceClass) {
+        return AuthoredPlacementKind::visibility;
+    }
+    if (resourceClass == kTowerDirectHavokResourceClass) {
+        return AuthoredPlacementKind::collision;
+    }
+    if (resourceClass == kTowerEntityModelResourceClass) {
+        return AuthoredPlacementKind::entityModel;
+    }
+    if (suppressed_component_scenery_class(resourceClass) != nullptr) {
+        return AuthoredPlacementKind::component;
+    }
+    return AuthoredPlacementKind::resource;
+}
+
+/** Expands only fully bounded Shadowkeep StaticMeshInstances groups. */
+[[nodiscard]] bool append_static_instances(std::uint32_t parentCandidateIndex,
+                                           const AuthoredPlacementCandidate& parent,
+                                           std::span<const std::byte> payload,
+                                           std::vector<AuthoredPlacementCandidate>& candidates,
+                                           AuthoredPlacementStats& stats) noexcept {
+    constexpr std::size_t kMaximumExpandedInstances = 65536;
+    ShadowkeepArray transforms{};
+    ShadowkeepArray statics{};
+    ShadowkeepArray groups{};
+    if (!find_shadowkeep_array(
+            payload, kShadowkeepTransformClass, kShadowkeepTransformStride, transforms)
+        || !find_shadowkeep_array(payload, kShadowkeepStaticClass, kShadowkeepStaticStride, statics)
+        || !find_shadowkeep_array(payload, kShadowkeepGroupClass, kShadowkeepGroupStride, groups)
+        || transforms.count == 0 || statics.count == 0 || groups.count == 0) {
+        return false;
+    }
+
+    std::size_t instanceCount = 0;
+    for (std::uint32_t groupIndex = 0; groupIndex < groups.count; ++groupIndex) {
+        std::array<std::uint32_t, 2> words{};
+        const std::size_t groupOffset =
+            groups.dataOffset + static_cast<std::size_t>(groupIndex) * kShadowkeepGroupStride;
+        if (!read_value(payload, groupOffset, words)) {
+            return false;
+        }
+        const std::uint32_t transformStart = words[0] >> 16U;
+        const std::uint32_t transformCount = words[1] >> 16U;
+        const std::uint32_t staticIndex = words[1] & 0xFFFFU;
+        std::uint32_t meshTag = 0;
+        if (transformCount == 0 || staticIndex >= statics.count || transformStart > transforms.count
+            || transformCount > transforms.count - transformStart
+            || !read_value(payload,
+                           statics.dataOffset
+                               + static_cast<std::size_t>(staticIndex) * kShadowkeepStaticStride,
+                           meshTag)
+            || meshTag < tables::kTagLowerBound || meshTag >= tables::kTagUpperBound
+            || transformCount > kMaximumExpandedInstances - instanceCount) {
+            return false;
+        }
+        for (std::uint32_t offset = 0; offset < transformCount; ++offset) {
+            core::Transform local{};
+            if (!read_static_instance_transform(
+                    payload, transforms, transformStart + offset, local)) {
+                return false;
+            }
+        }
+        instanceCount += transformCount;
+    }
+
+    candidates.reserve(candidates.size() + instanceCount);
+    for (std::uint32_t groupIndex = 0; groupIndex < groups.count; ++groupIndex) {
+        std::array<std::uint32_t, 2> words{};
+        const std::size_t groupOffset =
+            groups.dataOffset + static_cast<std::size_t>(groupIndex) * kShadowkeepGroupStride;
+        (void)read_value(payload, groupOffset, words);
+        const std::uint32_t transformStart = words[0] >> 16U;
+        const std::uint32_t transformCount = words[1] >> 16U;
+        const std::uint32_t staticIndex = words[1] & 0xFFFFU;
+        std::uint32_t meshTag = 0;
+        (void)read_value(payload,
+                         statics.dataOffset
+                             + static_cast<std::size_t>(staticIndex) * kShadowkeepStaticStride,
+                         meshTag);
+        for (std::uint32_t offset = 0; offset < transformCount; ++offset) {
+            core::Transform local{};
+            (void)read_static_instance_transform(
+                payload, transforms, transformStart + offset, local);
+            AuthoredPlacementCandidate child{};
+            child.binding = parent.binding;
+            child.binding.sourceTransform =
+                compose_transform(parent.binding.sourceTransform, local);
+            child.parentCandidateIndex = parentCandidateIndex;
+            child.entityTag = parent.entityTag;
+            child.resourceClass = parent.resourceClass;
+            child.resourceTag = parent.resourceTag;
+            child.dataTag = parent.dataTag;
+            child.meshTag = meshTag;
+            child.worldId = parent.worldId;
+            child.groupIndex = groupIndex;
+            child.transformIndex = transformStart + offset;
+            child.dataBytes = parent.dataBytes;
+            child.kind = AuthoredPlacementKind::staticInstance;
+            child.transformKnown = child.binding.sourceTransform.is_finite();
+            candidates.push_back(child);
+            ++stats.staticInstances;
+        }
+    }
+    return instanceCount != 0;
+}
+
+[[nodiscard]] bool collect_authored_candidates(std::span<const std::uint32_t> mapTables,
+                                               const reader::Source& source,
+                                               reader::Scratch& scratch,
+                                               std::vector<AuthoredPlacementCandidate>& candidates,
+                                               AuthoredPlacementStats& stats,
+                                               std::uint16_t editablePackage) noexcept {
+    candidates.clear();
+    stats.mapTables = mapTables.size();
+    std::vector<std::byte> table{};
+    std::vector<std::byte> entityBytes{};
+    std::vector<std::byte> linkedBytes{};
+    std::vector<std::byte> dataBytes{};
+    for (const std::uint32_t tableTag : mapTables) {
+        std::uint32_t tableClass = 0;
+        std::size_t entriesOffset = 0;
+        std::uint32_t entries = 0;
+        if (!reader::read_tag(source, scratch, tableTag, table, tableClass)
+            || tableClass != kMapDataTableClass
+            || !map_table_layout(table, entriesOffset, entries)) {
+            continue;
+        }
+        for (std::uint32_t index = 0; index < entries; ++index) {
+            const std::size_t entryOffset =
+                entriesOffset + static_cast<std::size_t>(index) * kMapEntryStride;
+            std::uint32_t entityTag = 0;
+            core::Transform transform{};
+            if (!read_value(table, entryOffset, entityTag)
+                || !read_map_transform(table, entryOffset, transform)) {
+                continue;
+            }
+
+            AuthoredPlacementCandidate candidate{};
+            candidate.entityTag = entityTag;
+            (void)read_value(table, entryOffset + kMapEntryWorldIdOffset, candidate.worldId);
+            candidate.binding.tableTag = tableTag;
+            candidate.binding.entryIndex = index;
+            candidate.binding.sourceTransform = transform;
+            candidate.transformKnown = true;
+            candidate.stageEditable = editablePackage == kPandoraMapPackageId
+                                      && tables::package_of(tableTag) == editablePackage;
+
+            std::size_t resourceOffset = 0;
+            std::uint32_t resourceClass = 0;
+            if (!map_resource(table, entryOffset, resourceOffset, resourceClass)) {
+                std::uint8_t objectType = 0;
+                if (!map_entity(table, entryOffset, source, scratch, entityBytes)
+                    || !entity_object_type(entityBytes, objectType)) {
+                    continue;
+                }
+                candidate.binding.parentTag = entityTag;
+                candidate.resourceTag = entityTag;
+                candidate.objectType = objectType;
+                candidate.objectTypeKnown = true;
+                candidate.kind = AuthoredPlacementKind::entity;
+                candidates.push_back(candidate);
+                ++stats.placementRows;
+                ++stats.entityPlacements;
+                continue;
+            }
+
+            candidate.resourceClass = resourceClass;
+            candidate.kind = authored_resource_kind(resourceClass);
+            std::uint8_t objectType = 0;
+            if (map_entity_owner(table, entryOffset, source, scratch, entityBytes)
+                && entity_object_type(entityBytes, objectType)) {
+                candidate.objectType = objectType;
+                candidate.objectTypeKnown = true;
+            }
+            if (candidate.kind == AuthoredPlacementKind::staticAggregate) {
+                std::uint32_t parentTag = 0;
+                if (resourceOffset <= table.size()
+                    && kStaticMapParentOffset + sizeof(parentTag) <= table.size() - resourceOffset
+                    && read_value(table, resourceOffset + kStaticMapParentOffset, parentTag)) {
+                    candidate.resourceTag = parentTag;
+                    candidate.binding.parentTag = parentTag;
+                    std::uint32_t parentClass = 0;
+                    std::uint32_t dataClass = 0;
+                    std::uint32_t dataTag = 0;
+                    if (reader::read_tag(source, scratch, parentTag, linkedBytes, parentClass)
+                        && parentClass == kStaticMapParentClass && linkedBytes.size() >= 0xC
+                        && read_value(linkedBytes, 0x8, dataTag)
+                        && reader::read_tag(source, scratch, dataTag, dataBytes, dataClass)
+                        && dataClass == kStaticMeshInstancesClass && !dataBytes.empty()) {
+                        candidate.dataTag = dataTag;
+                        candidate.dataBytes = dataBytes.size();
+                    }
+                }
+            } else if (candidate.kind == AuthoredPlacementKind::sky) {
+                std::uint32_t collectionTag = 0;
+                if (linked_resource_tag(table,
+                                        resourceOffset,
+                                        source,
+                                        scratch,
+                                        kSkyObjectCollectionClass,
+                                        collectionTag,
+                                        linkedBytes)) {
+                    candidate.resourceTag = collectionTag;
+                    candidate.binding.parentTag = collectionTag;
+                    candidate.dataBytes = linkedBytes.size();
+                }
+            }
+            if (candidate.binding.parentTag == 0) {
+                candidate.binding.parentTag = entityTag;
+            }
+
+            const std::uint32_t parentCandidateIndex =
+                static_cast<std::uint32_t>(candidates.size());
+            candidates.push_back(candidate);
+            ++stats.placementRows;
+            ++stats.resourcePlacements;
+            if (candidate.kind == AuthoredPlacementKind::staticAggregate) {
+                ++stats.staticAggregates;
+                if (candidate.dataTag != 0 && !dataBytes.empty()) {
+                    (void)append_static_instances(
+                        parentCandidateIndex, candidate, dataBytes, candidates, stats);
+                }
+            } else if (candidate.kind == AuthoredPlacementKind::resource) {
+                ++stats.unsupportedResources;
+            }
+        }
+    }
+    return stats.placementRows != 0;
+}
+
 /** Isolates one broad, thin, Tower-resident floor group while preserving native culling data. */
 [[nodiscard]] bool apply_tower_local_baseplate_payload(const reader::Source& source,
                                                        reader::Scratch& scratch,
@@ -1920,18 +2426,13 @@ struct ShadowkeepArray {
 
 } // namespace
 
-/** Builds and validates a staged Pandora patch with its large scenery redirected to baseplate. */
-bool stage_pandora_map_root(std::string_view rootName) noexcept {
-    std::array<state::content::Definition, 4> matches{};
-    std::size_t matchCount = 0;
-    if (!state::content::lookup(rootName, matches, matchCount) || matchCount == 0) {
+/** Builds a staged VFX-branch draft containing its sky and, optionally, a tiled baseplate. */
+bool stage_pandora_map_root(std::string_view rootName, bool includeTiledBaseplate) noexcept {
+    state::content::Definition root{};
+    if (rootName != kPandoraMapRoot || !resolve_map_root(rootName, root)
+        || tables::package_of(root.tag) != kPandoraMapPackageId
+        || tables::package_of(kPandoraVfxMapBranch) != kPandoraMapPackageId) {
         report("resolve_root", "missing");
-        return false;
-    }
-    const std::uint32_t rootTag = matches[0].tag;
-    const std::uint16_t packageId = tables::package_of(rootTag);
-    if (packageId == tables::kAbsentPackageId) {
-        report("resolve_root", "bad_tag");
         return false;
     }
 
@@ -1939,67 +2440,321 @@ bool stage_pandora_map_root(std::string_view rootName) noexcept {
     core::path::Buffer directory{};
     if (!item_packages::collect_keys(keys) || !item_packages::package_directory(directory)) {
         SecureZeroMemory(&keys, sizeof keys);
-        report("keys", "unavailable", packageId);
+        report("keys", "unavailable", kPandoraMapPackageId);
         return false;
     }
     const reader::Source source{directory.chars.data(), &keys};
     auto scratch = std::make_unique<reader::Scratch>();
     PackageFile package{};
-    bool complete = scratch != nullptr && load_package(source.directory, packageId, package);
-    std::vector<MutableBlock> blocks{};
-    blocks.reserve(kPandoraStaticTableRedirects.size());
+    TowerPatchStats graphStats{};
+    PandoraSkyDraftStats stats{};
+    std::vector<std::uint32_t> mapTables{};
+    bool complete =
+        scratch != nullptr && load_package(source.directory, kPandoraMapPackageId, package)
+        && collect_map_tables(kPandoraVfxMapBranch, source, *scratch, mapTables, graphStats);
+    stats.nodes = graphStats.nodes;
     if (complete) {
-        std::span<std::byte> baseplateTable{};
-        std::uint32_t baseplateResource = 0;
-        complete = static_map_table(source,
-                                    *scratch,
-                                    package,
-                                    kPandoraBaseplateStaticTable,
-                                    blocks,
-                                    baseplateTable,
-                                    baseplateResource)
-                   && baseplateResource == kPandoraBaseplateStaticResource;
+        const auto append_table = [&mapTables](std::uint32_t tableTag) {
+            if (std::find(mapTables.begin(), mapTables.end(), tableTag) == mapTables.end()) {
+                mapTables.push_back(tableTag);
+            }
+        };
+        append_table(kPandoraVfxSkyTable);
+        if (includeTiledBaseplate) {
+            for (const PandoraBaseplateTile& tile : kPandoraBaseplateTiles) {
+                append_table(tile.tableTag);
+            }
+        }
     }
-    if (complete) {
-        constexpr std::size_t kResourceTagOffset = 0xD8;
-        for (const StaticTableRedirect& redirect : kPandoraStaticTableRedirects) {
-            std::span<std::byte> table{};
-            std::uint32_t resourceTag = 0;
-            if (!static_map_table(
-                    source, *scratch, package, redirect.tableTag, blocks, table, resourceTag)
-                || (resourceTag != redirect.originalResourceTag
-                    && resourceTag != kPandoraBaseplateStaticResource)
-                || !write_value(table, kResourceTagOffset, kPandoraBaseplateStaticResource)) {
+    stats.tables = mapTables.size();
+
+    std::vector<MutableBlock> blocks{};
+    std::vector<std::uint32_t> touchedTables{};
+    std::vector<std::byte> sourceTable{};
+    std::vector<std::byte> entityBytes{};
+    core::Transform baseplateTransform{};
+    if (complete && includeTiledBaseplate) {
+        std::uint32_t sourceClass = 0;
+        std::size_t entriesOffset = 0;
+        std::uint32_t entryCount = 0;
+        std::size_t resourceOffset = 0;
+        std::uint32_t resourceClass = 0;
+        std::uint32_t parentTag = 0;
+        complete = reader::read_tag(source,
+                                    *scratch,
+                                    kPandoraBaseplateStaticTable,
+                                    sourceTable,
+                                    sourceClass)
+                   && sourceClass == kMapDataTableClass
+                   && map_table_layout(sourceTable, entriesOffset, entryCount) && entryCount == 1
+                   && map_resource(sourceTable, entriesOffset, resourceOffset, resourceClass)
+                   && resourceClass == kStaticMapResourceClass
+                   && resourceOffset <= sourceTable.size()
+                   && kStaticMapParentOffset + sizeof(parentTag)
+                          <= sourceTable.size() - resourceOffset
+                   && read_value(
+                       sourceTable, resourceOffset + kStaticMapParentOffset, parentTag)
+                   && parentTag == kPandoraBaseplateStaticParent
+                   && read_map_transform(sourceTable, entriesOffset, baseplateTransform)
+                   && validate_static_parent(source, *scratch, kPandoraBaseplateStaticParent);
+        if (complete
+            && !pandora_baseplate_tile_spacing(source, *scratch, stats.tileSpacing)) {
+            stats.tileSpacing = 24.0F;
+            report("pandora_baseplate_spacing",
+                   "fallback",
+                   kPandoraMapPackageId,
+                   package.latestPatch,
+                   kPandoraBaseplateStaticParent,
+                   24);
+        }
+        report("pandora_baseplate_preflight",
+               complete ? "ok" : "fail",
+               kPandoraMapPackageId,
+               sourceClass,
+               entryCount,
+               parentTag);
+    }
+    for (const std::uint32_t tableTag : mapTables) {
+        if (!complete) {
+            break;
+        }
+        if (tables::package_of(tableTag) != kPandoraMapPackageId) {
+            continue;
+        }
+        std::uint32_t sourceClass = 0;
+        std::size_t entriesOffset = 0;
+        std::uint32_t entryCount = 0;
+        if (!reader::read_tag(source, *scratch, tableTag, sourceTable, sourceClass)
+            || sourceClass != kMapDataTableClass
+            || !map_table_layout(sourceTable, entriesOffset, entryCount)) {
+            complete = false;
+            break;
+        }
+
+        const auto tile = std::find_if(
+            kPandoraBaseplateTiles.begin(),
+            kPandoraBaseplateTiles.end(),
+            [tableTag](const PandoraBaseplateTile& candidate) {
+                return candidate.tableTag == tableTag;
+            });
+        const bool tileTable = includeTiledBaseplate && tile != kPandoraBaseplateTiles.end();
+        if (tileTable && entryCount != 1) {
+            complete = false;
+            break;
+        }
+        std::vector<std::uint32_t> suppressed{};
+        suppressed.reserve(entryCount);
+        for (std::uint32_t index = 0; index < entryCount; ++index) {
+            const std::size_t entryOffset =
+                entriesOffset + static_cast<std::size_t>(index) * kMapEntryStride;
+            std::size_t resourceOffset = 0;
+            std::uint32_t resourceClass = 0;
+            if (!map_resource(sourceTable, entryOffset, resourceOffset, resourceClass)) {
+                std::uint8_t objectType = 0;
+                if (!map_entity(sourceTable, entryOffset, source, *scratch, entityBytes)
+                    || !entity_object_type(entityBytes, objectType)) {
+                    complete = false;
+                    break;
+                }
+                ++stats.placements;
+                if (suppressed_standalone_entity_type(objectType) != nullptr) {
+                    suppressed.push_back(index);
+                } else {
+                    ++stats.preservedInfrastructurePlacements;
+                }
+                continue;
+            }
+            ++stats.placements;
+            if (resourceClass == kSkyObjectPlacementResourceClass) {
+                std::uint32_t collectionTag = 0;
+                std::vector<std::byte> collection{};
+                const bool exactVfxSky =
+                    tableTag == kPandoraVfxSkyTable && index == 0 && entryCount == 1
+                    && linked_resource_tag(sourceTable,
+                                           resourceOffset,
+                                           source,
+                                           *scratch,
+                                           kSkyObjectCollectionClass,
+                                           collectionTag,
+                                           collection);
+                report("pandora_sky_collection",
+                       exactVfxSky ? "ok" : "fail",
+                       kPandoraMapPackageId,
+                       package.latestPatch,
+                       collectionTag,
+                       collection.size());
+                if (!exactVfxSky) {
+                    complete = false;
+                    break;
+                }
+                ++stats.preservedSkyPlacements;
+                continue;
+            }
+            if (tileTable && index == 0) {
+                std::uint32_t parentTag = 0;
+                const bool exactBaseplateSlot =
+                    resourceClass == kStaticMapResourceClass
+                    && resourceOffset <= sourceTable.size()
+                    && kStaticMapParentOffset + sizeof(parentTag)
+                           <= sourceTable.size() - resourceOffset
+                    && read_value(
+                        sourceTable, resourceOffset + kStaticMapParentOffset, parentTag)
+                    && (parentTag == tile->sourceParentTag
+                        || parentTag == kPandoraBaseplateStaticParent);
+                if (!exactBaseplateSlot) {
+                    complete = false;
+                    break;
+                }
+                ++stats.baseplateTiles;
+                continue;
+            }
+            if (resourceClass == kTowerVisibilityBundleResourceClass
+                || resourceClass == kTowerDirectHavokResourceClass
+                || resourceClass == kTowerEntityModelResourceClass) {
+                ++stats.preservedInfrastructurePlacements;
+                continue;
+            }
+            if (resourceClass != kStaticMapResourceClass) {
+                std::uint8_t objectType = 0;
+                if (!map_entity_owner(
+                        sourceTable, entryOffset, source, *scratch, entityBytes)
+                    || !entity_object_type(entityBytes, objectType)
+                    || suppressed_standalone_entity_type(objectType) == nullptr) {
+                    ++stats.preservedInfrastructurePlacements;
+                    continue;
+                }
+            }
+            suppressed.push_back(index);
+        }
+        if (!complete || (suppressed.empty() && !tileTable)) {
+            continue;
+        }
+
+        std::span<std::byte> table{};
+        std::uint32_t mutableClass = 0;
+        if (!mutable_entry(source, *scratch, package, tableTag, blocks, table, mutableClass)
+            || mutableClass != kMapDataTableClass) {
+            complete = false;
+            break;
+        }
+        if (tileTable) {
+            const std::size_t entryOffset = entriesOffset;
+            std::size_t resourceOffset = 0;
+            std::uint32_t resourceClass = 0;
+            std::uint32_t parentTag = 0;
+            const core::Transform target = tiled_pandora_transform(
+                baseplateTransform, stats.tileSpacing, tile->gridOffset);
+            if (!map_resource(table, entryOffset, resourceOffset, resourceClass)
+                || resourceClass != kStaticMapResourceClass || resourceOffset > table.size()
+                || kStaticMapParentOffset + sizeof(parentTag) > table.size() - resourceOffset
+                || !read_value(table, resourceOffset + kStaticMapParentOffset, parentTag)
+                || (parentTag != tile->sourceParentTag
+                    && parentTag != kPandoraBaseplateStaticParent)
+                || !write_value(table,
+                                resourceOffset + kStaticMapParentOffset,
+                                kPandoraBaseplateStaticParent)
+                || !write_map_transform(table, entryOffset, target)) {
                 complete = false;
                 break;
             }
         }
+        for (const std::uint32_t index : suppressed) {
+            const std::size_t entryOffset =
+                entriesOffset + static_cast<std::size_t>(index) * kMapEntryStride;
+            core::Transform transform{};
+            if (!read_map_transform(table, entryOffset, transform)) {
+                complete = false;
+                break;
+            }
+            transform.translation.z = kSuppressedStandaloneEntityHeight;
+            transform.uniformScale = kSuppressedStandaloneEntityScale;
+            if (!write_map_transform(table, entryOffset, transform)) {
+                complete = false;
+                break;
+            }
+            ++stats.suppressedPlacements;
+        }
+        if (complete) {
+            touchedTables.push_back(tableTag);
+        }
     }
+    std::sort(touchedTables.begin(), touchedTables.end());
+    touchedTables.erase(std::unique(touchedTables.begin(), touchedTables.end()),
+                        touchedTables.end());
+    stats.touchedTables = touchedTables.size();
+    complete = complete && stats.tables != 0 && stats.placements != 0
+               && stats.preservedSkyPlacements == 1
+               && stats.baseplateTiles
+                          == (includeTiledBaseplate ? kPandoraBaseplateTiles.size() : 0)
+               && stats.suppressedPlacements + stats.preservedSkyPlacements
+                              + stats.baseplateTiles
+                              + stats.preservedInfrastructurePlacements
+                      == stats.placements
+               && !blocks.empty();
+
     const std::uint32_t newPatch = package.latestPatch + 1;
+    std::vector<OwnerPatchFile> owners{};
     if (complete) {
-        complete = append_modified_blocks(package, blocks, keys, newPatch);
+        complete = load_owner_patch_files(package, blocks, newPatch, owners)
+                   && append_modified_blocks(package, blocks, keys, newPatch, owners);
     }
 
-    std::wstring stagedPath{};
+    std::size_t stagedBytes = package.bytes.size();
     if (complete) {
         reader::Path nextPath{};
+        std::wstring stagedPath{};
         complete = reader::build_path(package.stem, newPatch, nextPath);
         if (complete) {
             stagedPath.assign(nextPath.chars.data());
             stagedPath += L".izanami-stage";
-            complete = write_file(stagedPath, package.bytes);
+            for (const OwnerPatchFile& owner : owners) {
+                std::wstring ownerStagedPath{owner.path.chars.data()};
+                ownerStagedPath += L".izanami-owner-stage";
+                if (!write_file(ownerStagedPath, owner.bytes)) {
+                    complete = false;
+                    break;
+                }
+                stagedBytes += owner.bytes.size();
+            }
+            complete = complete && write_file(stagedPath, package.bytes);
         }
     }
     if (scratch != nullptr) {
         reader::close_files(*scratch);
     }
     SecureZeroMemory(&keys, sizeof keys);
-    report("stage_baseplate_variant",
+    report(includeTiledBaseplate ? "stage_pandora_blank_baseplate" : "stage_pandora_vfx_sky",
            complete ? "ok" : "fail",
-           packageId,
+           kPandoraMapPackageId,
            newPatch,
            static_cast<std::uint32_t>(blocks.size()),
-           complete ? package.bytes.size() : 0);
+           complete ? stagedBytes : 0);
+    std::array<char, core::log::kLineCapacity> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "ev=izanami_package stage=%s result=%s "
+                                      "branch=%08X nodes=%zu tables=%zu placements=%zu "
+                                      "suppressed=%zu preserved_sky=%zu baseplate_tiles=%zu "
+                                      "preserved_infrastructure=%zu tile_spacing=%.3f "
+                                      "touched_tables=%zu",
+                                      includeTiledBaseplate ? "pandora_blank_baseplate_plan"
+                                                            : "pandora_sky_plan",
+                                      complete ? "ok" : "fail",
+                                      kPandoraVfxMapBranch,
+                                      stats.nodes,
+                                      stats.tables,
+                                      stats.placements,
+                                      stats.suppressedPlacements,
+                                      stats.preservedSkyPlacements,
+                                      stats.baseplateTiles,
+                                      stats.preservedInfrastructurePlacements,
+                                      static_cast<double>(stats.tileSpacing),
+                                      stats.touchedTables);
+    if (written > 0) {
+        core::log::write(core::log::Channel::server,
+                         complete ? core::log::Level::info : core::log::Level::warn,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
     return complete;
 }
 
@@ -2109,6 +2864,171 @@ bool discover_authored_static_placements(std::string_view rootName,
            tables::package_of(root.tag),
            static_cast<std::uint32_t>(mapTables.size()),
            static_cast<std::uint32_t>(count));
+    return complete;
+}
+
+bool discover_authored_placements(std::string_view rootName,
+                                  std::span<AuthoredPlacementCandidate> output,
+                                  std::size_t& count,
+                                  AuthoredPlacementStats& stats) noexcept {
+    count = 0;
+    stats = {};
+    state::content::Definition root{};
+    if (output.empty() || !resolve_map_root(rootName, root)) {
+        report("catalog_authored_world", "root_unavailable");
+        return false;
+    }
+
+    reader::BlockKeys keys{};
+    core::path::Buffer directory{};
+    if (!item_packages::collect_keys(keys) || !item_packages::package_directory(directory)) {
+        SecureZeroMemory(&keys, sizeof keys);
+        report("catalog_authored_world", "keys_unavailable", tables::package_of(root.tag));
+        return false;
+    }
+    const reader::Source source{directory.chars.data(), &keys};
+    auto scratch = std::make_unique<reader::Scratch>();
+    TowerPatchStats graphStats{};
+    std::vector<std::uint32_t> mapTables{};
+    std::vector<AuthoredPlacementCandidate> candidates{};
+    bool complete =
+        scratch != nullptr
+        && collect_map_tables(root.tag,
+                              source,
+                              *scratch,
+                              mapTables,
+                              graphStats,
+                              kAuthoredCatalogGraphDepth,
+                              kAuthoredCatalogGraphCapacity)
+        && collect_authored_candidates(
+            mapTables, source, *scratch, candidates, stats, tables::package_of(root.tag));
+    if (complete) {
+        count = (std::min)(output.size(), candidates.size());
+        std::copy_n(candidates.begin(), count, output.begin());
+        stats.emitted = count;
+        stats.truncated = count != candidates.size();
+    }
+    if (scratch != nullptr) {
+        reader::close_files(*scratch);
+    }
+    SecureZeroMemory(&keys, sizeof keys);
+    complete = complete && count != 0;
+    report("catalog_authored_world",
+           complete ? "ok" : "fail",
+           tables::package_of(root.tag),
+           static_cast<std::uint32_t>(stats.mapTables),
+           static_cast<std::uint32_t>(stats.placementRows),
+           stats.emitted);
+    return complete;
+}
+
+bool stage_authored_map_root(std::string_view rootName,
+                             std::span<const AuthoredPlacementEdit> edits) noexcept {
+    state::content::Definition root{};
+    if (rootName != kPandoraMapRoot || edits.empty()
+        || edits.size() > kMaximumAuthoredPlacementEdits || !resolve_map_root(rootName, root)
+        || tables::package_of(root.tag) != kPandoraMapPackageId) {
+        report("stage_authored_edits", "invalid", kPandoraMapPackageId);
+        return false;
+    }
+    for (std::size_t index = 0; index < edits.size(); ++index) {
+        const AuthoredPlacementEdit& edit = edits[index];
+        if (!edit.binding.is_valid() || !edit.targetTransform.is_finite()
+            || edit.targetTransform.uniformScale <= 0.0F
+            || tables::package_of(edit.binding.tableTag) != kPandoraMapPackageId) {
+            report("stage_authored_edits", "edit_invalid", kPandoraMapPackageId);
+            return false;
+        }
+        for (std::size_t other = index + 1; other < edits.size(); ++other) {
+            if (edit.binding.same_record(edits[other].binding)) {
+                report("stage_authored_edits", "duplicate", kPandoraMapPackageId);
+                return false;
+            }
+        }
+    }
+
+    reader::BlockKeys keys{};
+    core::path::Buffer directory{};
+    if (!item_packages::collect_keys(keys) || !item_packages::package_directory(directory)) {
+        SecureZeroMemory(&keys, sizeof keys);
+        report("stage_authored_edits", "keys_unavailable", kPandoraMapPackageId);
+        return false;
+    }
+    const reader::Source source{directory.chars.data(), &keys};
+    auto scratch = std::make_unique<reader::Scratch>();
+    PackageFile package{};
+    TowerPatchStats graphStats{};
+    std::vector<std::uint32_t> mapTables{};
+    bool complete = scratch != nullptr
+                    && load_package(source.directory, kPandoraMapPackageId, package)
+                    && collect_map_tables(root.tag,
+                                          source,
+                                          *scratch,
+                                          mapTables,
+                                          graphStats,
+                                          kAuthoredCatalogGraphDepth,
+                                          kAuthoredCatalogGraphCapacity);
+    std::vector<MutableBlock> blocks{};
+    blocks.reserve(edits.size());
+    std::size_t applied = 0;
+    for (const AuthoredPlacementEdit& edit : edits) {
+        if (!complete) {
+            break;
+        }
+        if (std::find(mapTables.begin(), mapTables.end(), edit.binding.tableTag)
+            == mapTables.end()) {
+            complete = false;
+            break;
+        }
+        std::span<std::byte> table{};
+        std::uint32_t tableClass = 0;
+        if (!mutable_entry(
+                source, *scratch, package, edit.binding.tableTag, blocks, table, tableClass)
+            || tableClass != kMapDataTableClass
+            || !apply_authored_placement_edit(edit.binding.tableTag, table, edit)) {
+            complete = false;
+            break;
+        }
+        ++applied;
+    }
+    complete = complete && applied == edits.size() && !blocks.empty();
+
+    const std::uint32_t newPatch = package.latestPatch + 1;
+    std::vector<OwnerPatchFile> owners{};
+    if (complete) {
+        complete = load_owner_patch_files(package, blocks, newPatch, owners)
+                   && append_modified_blocks(package, blocks, keys, newPatch, owners);
+    }
+    std::size_t stagedBytes = package.bytes.size();
+    if (complete) {
+        reader::Path nextPath{};
+        std::wstring stagedPath{};
+        complete = reader::build_path(package.stem, newPatch, nextPath);
+        if (complete) {
+            stagedPath.assign(nextPath.chars.data());
+            stagedPath += L".izanami-stage";
+            for (const OwnerPatchFile& owner : owners) {
+                std::wstring ownerStagedPath{owner.path.chars.data()};
+                ownerStagedPath += L".izanami-owner-stage";
+                if (!write_file(ownerStagedPath, owner.bytes)) {
+                    complete = false;
+                    break;
+                }
+                stagedBytes += owner.bytes.size();
+            }
+            complete = complete && write_file(stagedPath, package.bytes);
+        }
+    }
+    if (scratch != nullptr) {
+        reader::close_files(*scratch);
+    }
+    SecureZeroMemory(&keys, sizeof keys);
+    report("stage_authored_edits",
+           complete ? "ok" : "fail",
+           kPandoraMapPackageId,
+           newPatch,
+           static_cast<std::uint32_t>(applied),
+           complete ? stagedBytes : 0);
     return complete;
 }
 
@@ -2302,10 +3222,18 @@ bool stage_tower_map_root(std::string_view rootName,
 /** Dispatches only to map roots whose no-edit package strategy is fully defined. */
 bool stage_map_root(std::string_view rootName) noexcept {
     if (rootName == kPandoraMapRoot) {
-        return stage_pandora_map_root(rootName);
+        return stage_pandora_map_root(rootName, false);
     }
     report("resolve_root", rootName == kTowerMapRoot ? "tower_edits_required" : "unsupported");
     return false;
+}
+
+bool stage_pandora_baseplate_world(std::string_view rootName) noexcept {
+    if (rootName != kPandoraMapRoot) {
+        report("resolve_root", "unsupported");
+        return false;
+    }
+    return stage_pandora_map_root(rootName, true);
 }
 
 /** Dispatches explicit placement edits only to the validated Tower package strategy. */

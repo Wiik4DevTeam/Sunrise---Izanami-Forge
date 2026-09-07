@@ -11,7 +11,7 @@
 
 namespace sunrise::izanami::fate::recipe {
 
-inline constexpr std::uint32_t kFormatVersion = 1;
+inline constexpr std::uint32_t kFormatVersion = 2;
 
 struct ActorInstruction {
     std::uint64_t editorId{};
@@ -20,6 +20,7 @@ struct ActorInstruction {
     std::uint32_t tag{};
     std::uint8_t objectType{};
     core::Transform transform{};
+    bool virtualGroup{};
 };
 
 struct MapRecipe {

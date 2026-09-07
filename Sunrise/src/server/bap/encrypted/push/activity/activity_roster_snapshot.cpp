@@ -844,11 +844,7 @@ client_placement(const Session& session, const RefreshReport* refresh) noexcept 
     return placement;
 }
 
-/** Tests whether the client holds a slice set, has entered the world and no host move is due. */
-bool client_in_world(const Session& session, const RefreshReport* refresh) noexcept {
-    // The ws-702 write-back's world-state field reads 8 only after `activity:in_world`, so the
-    // spawn waits for that value. A bubble crossing moves the current region without tearing the
-    // world down, so entry holds across it.
+bool client_region_ready(const Session& session, const RefreshReport* refresh) noexcept {
     const state::activity::membership::ClientPlacement placement =
         client_placement(session, refresh);
     const std::int32_t held = state::activity::membership::instantiated_region(placement);
@@ -860,7 +856,15 @@ bool client_in_world(const Session& session, const RefreshReport* refresh) noexc
                              && lease.bindingGeneration == session.activity.bindingGeneration
                              && lease.regionArrivalPending
                              && static_cast<std::int64_t>(lease.plan.effectiveRegion) != held;
-    return !movePending && held >= 0 && placement.entered;
+    return !movePending && held >= 0;
+}
+
+bool client_in_world(const Session& session, const RefreshReport* refresh) noexcept {
+    // WS-702 state 8 reports world arrival independently of player spawn. Hold spawning until
+    // that report so the transition fade has armed before the native spawn releases it.
+    const state::activity::membership::ClientPlacement placement =
+        client_placement(session, refresh);
+    return placement.entered && client_region_ready(session, refresh);
 }
 
 /** Merges one staged squad body after the complete cumulative frame reached transport output. */
@@ -1363,9 +1367,7 @@ build_roster_snapshot(Session& session,
     // carries matches nothing.
     snapshot.playerKey = published_player_key(session);
     snapshot.lifetime = lifetimeState;
-    // The host orders the spawn. `awaiting_client_sync` holds the native spawn gate while the
-    // client loads, and clears once it reports holding its region. The spawn then always lands
-    // after the fade arms and the native fade release in the spawn picker runs.
+    // Region readiness releases loading presentation; world arrival separately releases spawn.
     snapshot.awaitClientSync = !client_in_world(session, refresh);
     // Player_BindComponents walks every type-13 reference and the player datum can name any one of
     // them. So every participation record carries the same player key. Selecting the first slot

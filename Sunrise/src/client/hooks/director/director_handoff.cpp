@@ -440,6 +440,40 @@ void report_release(std::uint32_t virtualKey) noexcept {
     }
 }
 
+/** Queues one native transition while keeping carrier arming ordered before the game-thread poll.
+ */
+[[nodiscard]] ActivityLaunchResult queue_activity_launch(bool rebuildCarrier,
+                                                         bool armCarrier,
+                                                         ActivityGoalMode goalMode,
+                                                         bool rescueStalledPrologue) noexcept {
+    ActivityLaunchResult result{};
+    result.targetResolved = resolve_activity_launch_target() && resolve_session_goal_targets()
+                            && g_secondarySelectionInstalled.load(std::memory_order_acquire);
+    result.inOrbit = bootflow::in_orbit();
+    result.requested = result.targetResolved && result.inOrbit;
+    if (result.requested) {
+        g_carrierPrepared.store(false, std::memory_order_release);
+        g_carrierOverrideArmed.store(armCarrier, std::memory_order_release);
+        g_activityLaunchRebuildCarrier.store(rebuildCarrier, std::memory_order_release);
+        g_activityLaunchGoalMode.store(static_cast<std::uint8_t>(goalMode),
+                                       std::memory_order_release);
+        g_activityLaunchLeftOrbit.store(false, std::memory_order_release);
+        g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
+        g_activityLaunchStartedTick.store(GetTickCount64(), std::memory_order_release);
+        g_activityPrologueRescueArmed.store(rescueStalledPrologue, std::memory_order_release);
+        g_activityPrologueRescueNextTick.store(0, std::memory_order_release);
+        g_activityPrologueRescueAttempts.store(0, std::memory_order_release);
+        g_activityLaunchPending.store(true, std::memory_order_release);
+    } else {
+        g_carrierOverrideArmed.store(false, std::memory_order_release);
+        g_activityPrologueRescueArmed.store(false, std::memory_order_release);
+    }
+    report_activity_launch(
+        "request",
+        result.requested ? "ok" : (result.targetResolved ? "not_in_orbit" : "target_missing"));
+    return result;
+}
+
 } // namespace
 
 /** Installs the exact-caller local carrier before orbit constructs its selection. */
@@ -470,32 +504,24 @@ bool install_local_carrier() noexcept {
 ActivityLaunchResult request_activity_launch(bool rebuildCarrier,
                                              ActivityGoalMode goalMode,
                                              bool rescueStalledPrologue) noexcept {
-    ActivityLaunchResult result{};
-    result.targetResolved = resolve_activity_launch_target() && resolve_session_goal_targets()
-                            && g_secondarySelectionInstalled.load(std::memory_order_acquire);
-    result.inOrbit = bootflow::in_orbit();
-    result.requested = result.targetResolved && result.inOrbit;
-    if (result.requested) {
-        g_carrierPrepared.store(false, std::memory_order_release);
-        g_carrierOverrideArmed.store(rebuildCarrier, std::memory_order_release);
-        g_activityLaunchRebuildCarrier.store(rebuildCarrier, std::memory_order_release);
-        g_activityLaunchGoalMode.store(static_cast<std::uint8_t>(goalMode),
-                                       std::memory_order_release);
-        g_activityLaunchLeftOrbit.store(false, std::memory_order_release);
-        g_activityLaunchAwaitingCarrier.store(false, std::memory_order_release);
-        g_activityLaunchStartedTick.store(GetTickCount64(), std::memory_order_release);
-        g_activityPrologueRescueArmed.store(rescueStalledPrologue, std::memory_order_release);
-        g_activityPrologueRescueNextTick.store(0, std::memory_order_release);
-        g_activityPrologueRescueAttempts.store(0, std::memory_order_release);
-        g_activityLaunchPending.store(true, std::memory_order_release);
-    } else {
-        g_carrierOverrideArmed.store(false, std::memory_order_release);
-        g_activityPrologueRescueArmed.store(false, std::memory_order_release);
+    return queue_activity_launch(rebuildCarrier, rebuildCarrier, goalMode, rescueStalledPrologue);
+}
+
+ActivityLaunchResult request_activity_launch_with_carrier(std::int16_t carrierActivityIndex,
+                                                          ActivityGoalMode goalMode,
+                                                          bool rescueStalledPrologue) noexcept {
+    if (carrierActivityIndex <= 0
+        || carrierActivityIndex > state::activity::destination::kMaximumActivityIndex) {
+        ActivityLaunchResult result{};
+        result.inOrbit = bootflow::in_orbit();
+        report_activity_launch("request", "invalid_carrier");
+        return result;
     }
-    report_activity_launch(
-        "request",
-        result.requested ? "ok" : (result.targetResolved ? "not_in_orbit" : "target_missing"));
-    return result;
+
+    g_carrierTarget.store(carrierActivityIndex, std::memory_order_release);
+    // State 30 owns the secondary-selection getter. Arm the captured identity immediately before
+    // that state is requested; cleanup state 28 does not reconstruct this selection.
+    return queue_activity_launch(false, true, goalMode, rescueStalledPrologue);
 }
 
 /** Requests a short native key pulse that opens Destiny's Director. */

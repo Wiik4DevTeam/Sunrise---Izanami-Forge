@@ -670,7 +670,7 @@ void draw_pandora_carrier_lab(workspace::EditorWorkspace& editor,
         ImGui::EndTable();
     }
 
-    if (ImGui::Button("Stage Reduction Draft", ImVec2(190.0F, 0.0F))) {
+    if (ImGui::Button("Stage VFX Sky Draft", ImVec2(190.0F, 0.0F))) {
         if (select_template(editor, "pandora_carrier_lab")) {
             const workspace::LaunchResult result = editor.stage_selected_template_package();
             set_lab_message(
@@ -702,7 +702,10 @@ void draw_pandora_carrier_lab(workspace::EditorWorkspace& editor,
         ImGui::TableSetupColumn("Experiment status");
         ImGui::TableHeadersRow();
         constexpr std::array rows{
-            std::array<std::string_view, 3>{"Sky objects", "2", "preserve candidates"},
+            std::array<std::string_view, 3>{
+                "VFX sky collection", "1", "resolved from exact table 0x8150E150 at stage time"},
+            std::array<std::string_view, 3>{
+                "Other Pandora sky", "1", "separate branch; never copied into VFX draft"},
             std::array<std::string_view, 3>{
                 "Static maps", "6", "baseplate tag known; visual scope partial"},
             std::array<std::string_view, 3>{

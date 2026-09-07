@@ -1,10 +1,12 @@
 #include "spawn_runtime.h"
+#include "activation_queue.h"
 
 #include <Windows.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -75,7 +77,8 @@ constexpr std::size_t kObjectDatumStrideOffset = 0x10;
 constexpr std::size_t kObjectDatumBytes = 0xE0;
 constexpr std::size_t kObjectHandleOffset = 0x0C;
 constexpr std::size_t kObjectDatumCapacity = 1U << 13U;
-constexpr std::size_t kActivationCapacity = 64;
+// Match the maximum saved combined asset so a full group can be queued together.
+constexpr std::size_t kActivationCapacity = 1024;
 constexpr std::uint8_t kActivationAttempts = 4;
 constexpr std::uint64_t kRequestTimeoutMs = 3000;
 
@@ -112,12 +115,6 @@ struct Request {
     bool line{};
 };
 
-struct Activation {
-    std::uint32_t handle{kInvalidDatum};
-    std::array<float, 8> transform{};
-    std::uint8_t attempts{};
-};
-
 struct Shortcut {
     Settings settings{};
     std::uint32_t tag{kInvalidDatum};
@@ -129,7 +126,13 @@ struct ResolvedWorldDefinition {
     const std::byte* address{};
 };
 
-hooking::detour::Handle g_updateHook{};
+enum class HookSlot : std::size_t {
+    update,
+    transform,
+    count,
+};
+
+std::array<hooking::detour::Handle, static_cast<std::size_t>(HookSlot::count)> g_hooks{};
 std::atomic_bool g_installed{};
 PlacementInitialize g_initialize{};
 PlacementInitialize g_directInitialize{};
@@ -142,20 +145,92 @@ HMODULE g_gameModule{};
 SRWLOCK g_requestLock{SRWLOCK_INIT};
 Request g_request{};
 SRWLOCK g_activationLock{SRWLOCK_INIT};
-std::array<Activation, kActivationCapacity> g_activations{};
-std::size_t g_activationCount{};
+ActivationQueue<kActivationCapacity> g_activations{};
 SRWLOCK g_shortcutLock{SRWLOCK_INIT};
 std::array<Shortcut, client::spawn::kActionCount> g_shortcuts{};
 std::array<std::atomic_bool, client::spawn::kActionCount> g_shortcutDown{};
-std::atomic_uint64_t g_spawnSequence{};
-std::atomic_uint32_t g_lastSpawnTag{};
-std::atomic_uint32_t g_lastSpawnHandle{kInvalidDatum};
-std::atomic_uint8_t g_lastSpawnType{};
-std::atomic_uint8_t g_lastSpawnOutcome{};
-std::array<std::atomic<float>, 3> g_lastSpawnPosition{};
-std::array<std::atomic<float>, 4> g_lastSpawnRotation{};
-std::atomic<float> g_lastSpawnScale{1.0F};
-std::atomic_bool g_lastSpawnSucceeded{};
+SRWLOCK g_observationLock{SRWLOCK_INIT};
+SpawnObservation g_spawnObservation{};
+
+template <typename T> [[nodiscard]] bool safe_read(const void* source, T& value) noexcept;
+
+struct TransformObservationSlot {
+    std::atomic_flag writer = ATOMIC_FLAG_INIT;
+    std::atomic_uint32_t sequence{};
+    std::atomic_uint32_t handle{kInvalidDatum};
+    std::array<std::atomic_uint32_t, 8> lanes{};
+};
+
+std::array<TransformObservationSlot, kObjectDatumCapacity> g_transformObservations{};
+
+void clear_transform_observations() noexcept {
+    for (TransformObservationSlot& slot : g_transformObservations) {
+        slot.writer.clear(std::memory_order_relaxed);
+        slot.sequence.store(0, std::memory_order_relaxed);
+        slot.handle.store(kInvalidDatum, std::memory_order_relaxed);
+        for (std::atomic_uint32_t& lane : slot.lanes) {
+            lane.store(0, std::memory_order_relaxed);
+        }
+    }
+}
+
+void observe_transform(void* object, const float* transform) noexcept {
+    std::uint32_t handle = kInvalidDatum;
+    std::array<float, 8> values{};
+    if (object == nullptr || transform == nullptr
+        || !safe_read(static_cast<const std::byte*>(object) + kObjectHandleOffset, handle)
+        || handle == kInvalidDatum || (handle & 0x1FFFU) >= g_transformObservations.size()
+        || !safe_read(transform, values)
+        || !std::all_of(
+            values.begin(), values.end(), [](float value) { return std::isfinite(value); })
+        || values[7] <= 0.0F) {
+        return;
+    }
+
+    TransformObservationSlot& slot = g_transformObservations[handle & 0x1FFFU];
+    if (slot.writer.test_and_set(std::memory_order_acquire)) {
+        return;
+    }
+    (void)slot.sequence.fetch_add(1, std::memory_order_acq_rel);
+    slot.handle.store(handle, std::memory_order_relaxed);
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        slot.lanes[index].store(std::bit_cast<std::uint32_t>(values[index]),
+                                std::memory_order_relaxed);
+    }
+    (void)slot.sequence.fetch_add(1, std::memory_order_release);
+    slot.writer.clear(std::memory_order_release);
+}
+
+[[nodiscard]] bool observed_transform(std::uint32_t handle,
+                                      WorldObjectObservation& observation) noexcept {
+    if (handle == kInvalidDatum || (handle & 0x1FFFU) >= g_transformObservations.size()) {
+        return false;
+    }
+    TransformObservationSlot& slot = g_transformObservations[handle & 0x1FFFU];
+    for (std::uint8_t attempt = 0; attempt < 3; ++attempt) {
+        const std::uint32_t before = slot.sequence.load(std::memory_order_acquire);
+        if ((before & 1U) != 0 || slot.handle.load(std::memory_order_relaxed) != handle) {
+            continue;
+        }
+        std::array<float, 8> values{};
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            values[index] = std::bit_cast<float>(slot.lanes[index].load(std::memory_order_relaxed));
+        }
+        const std::uint32_t after = slot.sequence.load(std::memory_order_acquire);
+        if (before != after || (after & 1U) != 0
+            || !std::all_of(
+                values.begin(), values.end(), [](float value) { return std::isfinite(value); })
+            || values[7] <= 0.0F) {
+            continue;
+        }
+        observation.rotation = {values[0], values[1], values[2], values[3]};
+        observation.position = {values[4], values[5], values[6]};
+        observation.scale = values[7];
+        observation.transformKnown = true;
+        return true;
+    }
+    return false;
+}
 
 [[nodiscard]] std::string_view outcome_label(SpawnOutcome outcome) noexcept {
     switch (outcome) {
@@ -171,6 +246,8 @@ std::atomic_bool g_lastSpawnSucceeded{};
         return "surface_miss";
     case SpawnOutcome::factoryRejected:
         return "factory_rejected";
+    case SpawnOutcome::timedOut:
+        return "timed_out";
     }
     return "unknown";
 }
@@ -185,22 +262,23 @@ void publish_spawn_observation(std::uint32_t tag,
     std::uint8_t type = 0;
     (void)object_type(tag, type);
     const bool succeeded = outcome == SpawnOutcome::created && handle != kInvalidDatum;
-    g_lastSpawnTag.store(tag, std::memory_order_relaxed);
-    g_lastSpawnHandle.store(handle, std::memory_order_relaxed);
-    g_lastSpawnType.store(type, std::memory_order_relaxed);
-    g_lastSpawnOutcome.store(static_cast<std::uint8_t>(outcome), std::memory_order_relaxed);
-    for (std::size_t index = 0; index < g_lastSpawnPosition.size(); ++index) {
-        g_lastSpawnPosition[index].store(position == nullptr ? 0.0F : (*position)[index],
-                                         std::memory_order_relaxed);
+    SpawnObservation observation{};
+    observation.tag = tag;
+    observation.handle = handle;
+    observation.objectType = type;
+    observation.outcome = outcome;
+    if (position != nullptr) {
+        observation.position = *position;
     }
-    constexpr std::array<float, 4> identity{0.0F, 0.0F, 0.0F, 1.0F};
-    for (std::size_t index = 0; index < g_lastSpawnRotation.size(); ++index) {
-        g_lastSpawnRotation[index].store(rotation == nullptr ? identity[index] : (*rotation)[index],
-                                         std::memory_order_relaxed);
+    if (rotation != nullptr) {
+        observation.rotation = *rotation;
     }
-    g_lastSpawnScale.store(scale, std::memory_order_relaxed);
-    g_lastSpawnSucceeded.store(succeeded, std::memory_order_relaxed);
-    (void)g_spawnSequence.fetch_add(1, std::memory_order_release);
+    observation.scale = scale;
+    observation.succeeded = succeeded;
+    AcquireSRWLockExclusive(&g_observationLock);
+    observation.sequence = g_spawnObservation.sequence + 1;
+    g_spawnObservation = observation;
+    ReleaseSRWLockExclusive(&g_observationLock);
 
     std::array<char, 192> line{};
     const int written = std::snprintf(line.data(),
@@ -331,20 +409,17 @@ void consider_world_definition(const ResolvedWorldDefinition* candidate,
     return type == 8 || type == 11 || type == 20 || type == 21;
 }
 
-void queue_activation(std::uint32_t handle,
-                      const std::array<float, 4>& rotation,
-                      const std::array<float, 4>& position) noexcept {
+[[nodiscard]] bool queue_activation(std::uint32_t handle,
+                                    const std::array<float, 4>& rotation,
+                                    const std::array<float, 4>& position) noexcept {
     Activation value{};
     value.handle = handle;
     std::copy(rotation.begin(), rotation.end(), value.transform.begin());
     std::copy(position.begin(), position.end(), value.transform.begin() + 4);
     AcquireSRWLockExclusive(&g_activationLock);
-    if (g_activationCount == g_activations.size()) {
-        std::move(g_activations.begin() + 1, g_activations.end(), g_activations.begin());
-        --g_activationCount;
-    }
-    g_activations[g_activationCount++] = value;
+    const bool queued = g_activations.append(std::span(&value, 1));
     ReleaseSRWLockExclusive(&g_activationLock);
+    return queued;
 }
 
 void service_activations() noexcept {
@@ -353,7 +428,7 @@ void service_activations() noexcept {
     }
     AcquireSRWLockExclusive(&g_activationLock);
     std::size_t index = 0;
-    while (index < g_activationCount) {
+    while (index < g_activations.size()) {
         Activation& value = g_activations[index];
         std::byte* const object = resolve_object(value.handle);
         bool finished = false;
@@ -364,7 +439,13 @@ void service_activations() noexcept {
             } __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
         if (finished || ++value.attempts >= kActivationAttempts) {
-            g_activations[index] = g_activations[--g_activationCount];
+            if (!finished) {
+                core::log::write(
+                    core::log::Channel::client,
+                    core::log::Level::warn,
+                    "ev=spawn stage=transform result=fail reason=activation_exhausted");
+            }
+            g_activations.erase(index);
             continue;
         }
         ++index;
@@ -482,7 +563,11 @@ void service_activations() noexcept {
                 static_cast<std::byte*>(descriptor) + 0x20, position.data(), sizeof position);
             (void)g_factory(&result, descriptor);
             if (result != kInvalidDatum && needs_activation(tag)) {
-                queue_activation(result, rotation, position);
+                if (!queue_activation(result, rotation, position)) {
+                    core::log::write(core::log::Channel::client,
+                                     core::log::Level::warn,
+                                     "ev=spawn stage=activation result=fail reason=queue_full");
+                }
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -505,22 +590,7 @@ void service_request() noexcept {
     }
     std::array<float, 3> camera{};
     std::array<float, 3> forward{};
-    if (!teleport::current_camera_pose(camera, forward)) {
-        std::uint32_t tag = kInvalidDatum;
-        AcquireSRWLockExclusive(&g_requestLock);
-        if (!g_request.tags.empty()) {
-            const std::size_t index = g_request.line ? g_request.cursor : 0;
-            if (index < g_request.tags.size()) {
-                tag = g_request.tags[index];
-            }
-            g_request = {};
-        }
-        ReleaseSRWLockExclusive(&g_requestLock);
-        if (tag != kInvalidDatum) {
-            publish_spawn_observation(tag, kInvalidDatum, SpawnOutcome::cameraUnavailable, "place");
-        }
-        return;
-    }
+    const bool hasCamera = teleport::current_camera_pose(camera, forward);
 
     AcquireSRWLockExclusive(&g_requestLock);
     const std::size_t total = g_request.line ? g_request.tags.size() : g_request.amount;
@@ -532,6 +602,16 @@ void service_request() noexcept {
 
     const std::uint32_t tag =
         g_request.line ? g_request.tags[g_request.cursor] : g_request.tags.front();
+    const bool needsCamera = g_request.origin == Origin::surfaceRaycast
+                             || g_request.origin == Origin::cameraRay || g_request.line
+                             || (g_request.settings.useCameraRotation
+                                 && !g_request.settings.overrideRotation);
+    if (needsCamera && !hasCamera) {
+        g_request = {};
+        ReleaseSRWLockExclusive(&g_requestLock);
+        publish_spawn_observation(tag, kInvalidDatum, SpawnOutcome::cameraUnavailable, "place");
+        return;
+    }
     std::array<float, 3> position{};
     bool placed = false;
     SpawnOutcome placementFailure = SpawnOutcome::surfaceMiss;
@@ -641,7 +721,8 @@ void poll_shortcuts() noexcept {
 }
 
 void __fastcall player_component_update(void* object, void* input, void* authored) noexcept {
-    const auto next = reinterpret_cast<PlayerComponentUpdate>(g_updateHook.original);
+    const auto next = reinterpret_cast<PlayerComponentUpdate>(
+        g_hooks[static_cast<std::size_t>(HookSlot::update)].original);
     if (next != nullptr) {
         next(object, input, authored);
     }
@@ -649,6 +730,17 @@ void __fastcall player_component_update(void* object, void* input, void* authore
         poll_shortcuts();
         service_activations();
         service_request();
+    }
+}
+
+void __fastcall object_transform_observer(void* object, const float* transform) noexcept {
+    const auto next = reinterpret_cast<ObjectTransform>(
+        g_hooks[static_cast<std::size_t>(HookSlot::transform)].original);
+    if (next != nullptr) {
+        next(object, transform);
+    }
+    if (g_installed.load(std::memory_order_relaxed)) {
+        observe_transform(object, transform);
     }
 }
 
@@ -694,13 +786,22 @@ bool install() noexcept {
     g_gameModule = GetModuleHandleW(nullptr);
     if (g_resolver == nullptr || g_gameModule == nullptr
         || !hooking::detour::install({update, reinterpret_cast<void*>(&player_component_update)},
-                                     g_updateHook)) {
+                                     g_hooks[static_cast<std::size_t>(HookSlot::update)])) {
         uninstall();
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
                          "ev=spawn stage=install result=fail reason=attach");
         return false;
     }
+    const bool observing =
+        hooking::detour::install({transform, reinterpret_cast<void*>(&object_transform_observer)},
+                                 g_hooks[static_cast<std::size_t>(HookSlot::transform)]);
+    if (!observing) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::warn,
+                         "ev=spawn stage=transform_observer result=fail reason=attach");
+    }
+    clear_transform_observations();
     g_installed.store(true, std::memory_order_release);
     core::log::write(
         core::log::Channel::client, core::log::Level::info, "ev=spawn stage=install result=ok");
@@ -710,8 +811,18 @@ bool install() noexcept {
 void uninstall() noexcept {
     g_installed.store(false, std::memory_order_release);
     cancel();
-    (void)hooking::detour::uninstall(g_updateHook);
-    g_updateHook = {};
+    const bool allAttached =
+        std::all_of(g_hooks.begin(), g_hooks.end(), [](const auto& hook) { return hook.attached; });
+    if (allAttached) {
+        (void)hooking::detour::uninstall(g_hooks);
+    } else {
+        for (hooking::detour::Handle& hook : g_hooks) {
+            if (hook.attached) {
+                (void)hooking::detour::uninstall(hook);
+            }
+        }
+    }
+    g_hooks = {};
     g_initialize = nullptr;
     g_directInitialize = nullptr;
     g_factory = nullptr;
@@ -720,7 +831,7 @@ void uninstall() noexcept {
     g_raycast = nullptr;
     g_gameModule = nullptr;
     AcquireSRWLockExclusive(&g_activationLock);
-    g_activationCount = 0;
+    g_activations.clear();
     ReleaseSRWLockExclusive(&g_activationLock);
     AcquireSRWLockExclusive(&g_shortcutLock);
     g_shortcuts = {};
@@ -728,13 +839,10 @@ void uninstall() noexcept {
     for (std::atomic_bool& down : g_shortcutDown) {
         down.store(false, std::memory_order_relaxed);
     }
-    g_spawnSequence.store(0, std::memory_order_release);
-    g_lastSpawnTag.store(0, std::memory_order_relaxed);
-    g_lastSpawnHandle.store(kInvalidDatum, std::memory_order_relaxed);
-    g_lastSpawnType.store(0, std::memory_order_relaxed);
-    g_lastSpawnOutcome.store(static_cast<std::uint8_t>(SpawnOutcome::none),
-                             std::memory_order_relaxed);
-    g_lastSpawnSucceeded.store(false, std::memory_order_relaxed);
+    AcquireSRWLockExclusive(&g_observationLock);
+    g_spawnObservation = {};
+    ReleaseSRWLockExclusive(&g_observationLock);
+    clear_transform_observations();
 }
 
 bool ready() noexcept {
@@ -742,12 +850,20 @@ bool ready() noexcept {
 }
 
 bool busy() noexcept {
+    std::uint32_t expiredTag = kInvalidDatum;
     AcquireSRWLockExclusive(&g_requestLock);
     if (!g_request.tags.empty() && GetTickCount64() - g_request.lastProgress >= kRequestTimeoutMs) {
+        const std::size_t index = g_request.line ? g_request.cursor : 0;
+        if (index < g_request.tags.size()) {
+            expiredTag = g_request.tags[index];
+        }
         g_request = {};
     }
     const bool value = !g_request.tags.empty();
     ReleaseSRWLockExclusive(&g_requestLock);
+    if (expiredTag != kInvalidDatum) {
+        publish_spawn_observation(expiredTag, kInvalidDatum, SpawnOutcome::timedOut, "timeout");
+    }
     return value;
 }
 
@@ -895,6 +1011,9 @@ bool visit_world_objects(std::span<const WorldObjectDefinition> definitions,
         observation.identity = matchedTag && matchedPointer ? WorldObjectIdentity::tagAndPointer
                                : matchedPointer             ? WorldObjectIdentity::definitionPointer
                                                             : WorldObjectIdentity::definitionTag;
+        if (observed_transform(before, observation)) {
+            ++scan.observedTransforms;
+        }
         ++scan.matchedObjects;
         if (!visitor(context, observation)) {
             break;
@@ -904,20 +1023,9 @@ bool visit_world_objects(std::span<const WorldObjectDefinition> definitions,
 }
 
 SpawnObservation last_spawn_observation() noexcept {
-    SpawnObservation result{};
-    result.sequence = g_spawnSequence.load(std::memory_order_acquire);
-    result.tag = g_lastSpawnTag.load(std::memory_order_relaxed);
-    result.handle = g_lastSpawnHandle.load(std::memory_order_relaxed);
-    result.objectType = g_lastSpawnType.load(std::memory_order_relaxed);
-    result.outcome = static_cast<SpawnOutcome>(g_lastSpawnOutcome.load(std::memory_order_relaxed));
-    for (std::size_t index = 0; index < result.position.size(); ++index) {
-        result.position[index] = g_lastSpawnPosition[index].load(std::memory_order_relaxed);
-    }
-    for (std::size_t index = 0; index < result.rotation.size(); ++index) {
-        result.rotation[index] = g_lastSpawnRotation[index].load(std::memory_order_relaxed);
-    }
-    result.scale = g_lastSpawnScale.load(std::memory_order_relaxed);
-    result.succeeded = g_lastSpawnSucceeded.load(std::memory_order_relaxed);
+    AcquireSRWLockShared(&g_observationLock);
+    const SpawnObservation result = g_spawnObservation;
+    ReleaseSRWLockShared(&g_observationLock);
     return result;
 }
 
@@ -1036,17 +1144,38 @@ bool request_transform(std::uint32_t handle,
                        const std::array<float, 3>& position,
                        const std::array<float, 4>& rotation,
                        float scale) noexcept {
-    if (!ready() || handle == kInvalidDatum || !object_live(handle) || !std::isfinite(scale)
-        || scale <= 0.0F
-        || !std::all_of(
-            position.begin(), position.end(), [](float value) { return std::isfinite(value); })
-        || !std::all_of(
-            rotation.begin(), rotation.end(), [](float value) { return std::isfinite(value); })) {
+    const TransformRequest request{handle, position, rotation, scale};
+    return request_transforms(std::span(&request, 1));
+}
+
+bool request_transforms(std::span<const TransformRequest> requests) noexcept {
+    if (!ready() || requests.empty() || requests.size() > kActivationCapacity) {
         return false;
     }
-    const std::array<float, 4> positionScale{position[0], position[1], position[2], scale};
-    queue_activation(handle, rotation, positionScale);
-    return true;
+    std::array<Activation, kActivationCapacity> pending{};
+    for (std::size_t index = 0; index < requests.size(); ++index) {
+        const TransformRequest& request = requests[index];
+        if (request.handle == kInvalidDatum || !object_live(request.handle)
+            || !std::isfinite(request.scale) || request.scale <= 0.0F
+            || !std::all_of(request.position.begin(),
+                            request.position.end(),
+                            [](float value) { return std::isfinite(value); })
+            || !std::all_of(request.rotation.begin(), request.rotation.end(), [](float value) {
+                   return std::isfinite(value);
+               })) {
+            return false;
+        }
+        pending[index].handle = request.handle;
+        std::copy(
+            request.rotation.begin(), request.rotation.end(), pending[index].transform.begin());
+        std::copy(
+            request.position.begin(), request.position.end(), pending[index].transform.begin() + 4);
+        pending[index].transform[7] = request.scale;
+    }
+    AcquireSRWLockExclusive(&g_activationLock);
+    const bool queued = g_activations.append(std::span(pending).first(requests.size()));
+    ReleaseSRWLockExclusive(&g_activationLock);
+    return queued;
 }
 
 bool request_line(std::span<const std::uint32_t> tags,

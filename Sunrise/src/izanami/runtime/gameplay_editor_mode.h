@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace sunrise::izanami::runtime::gameplay_editor_mode {
 
 struct ActivationResult {
@@ -35,6 +37,10 @@ struct NativeActivityLaunchResult {
 /** Queues Destiny's native orbit-to-activity transition without opening the Director. */
 [[nodiscard]] NativeActivityLaunchResult
 request_native_activity_launch(bool rebuildCarrier = false) noexcept;
+
+/** Rebuilds a direct launch from an observed nonzero native activity carrier. */
+[[nodiscard]] NativeActivityLaunchResult
+request_native_activity_launch_with_carrier(std::int16_t carrierActivityIndex) noexcept;
 
 /** Queues a catalog destination and recovers resident maps with no usable intro metadata. */
 [[nodiscard]] NativeActivityLaunchResult request_native_catalog_activity_launch() noexcept;

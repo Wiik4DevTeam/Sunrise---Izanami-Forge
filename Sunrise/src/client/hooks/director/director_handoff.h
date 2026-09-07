@@ -42,6 +42,15 @@ request_activity_launch(bool rebuildCarrier,
                         bool rescueStalledPrologue = false) noexcept;
 
 /**
+ * Queues native activity-session setup and supplies an observed nonzero selection when state 30
+ * asks for its secondary activity index. This never substitutes Tower or activity index zero.
+ */
+[[nodiscard]] ActivityLaunchResult request_activity_launch_with_carrier(
+    std::int16_t carrierActivityIndex,
+    ActivityGoalMode goalMode = ActivityGoalMode::activityTransition,
+    bool rescueStalledPrologue = false) noexcept;
+
+/**
  * Requests a short native key pulse that opens Destiny's Director.
  * The pulse is emitted on the next game-frame polls so the game, not Sunrise UI code, owns the
  * transition into its Destinations experience.

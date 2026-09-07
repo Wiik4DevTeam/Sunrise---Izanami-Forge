@@ -10,6 +10,7 @@
 #include "../../../../middleware/bap/activity_host_manager/request/selection/\
 activity_manager_selection_parser.h"
 #include "../../../../middleware/bap/activity_host_manager/response/activity_manager_response.h"
+#include "../../../../state/activity/carrier/activity_carrier.h"
 #include "../../../../state/activity/defaults/activity_defaults_snapshot.h"
 #include "../../../../state/activity/forced/activity_forced_destination.h"
 #include "../../../../state/activity/runtime.h"
@@ -183,13 +184,41 @@ prepare_allocation(const request_selection::ActivityManagerSelectionResult& pars
     state::activity::defaults::ActivityDefaults defaults{};
     state::activity::defaults::snapshot(defaults);
     state::activity::defaults::apply_arrival_override(defaults, destination);
-    // Forced lands last and renames the captured descriptor in place. Orbit's index-only
-    // selection uses activity zero as a placeholder; forced catalog worlds need the bundled
-    // activity-20 carrier that historically advanced their native prologue.
+    // Forced lands last and renames the captured descriptor in place. Most index-zero selections
+    // retain the bundled fallback; an explicit native probe may preserve zero to test a scenario
+    // whose own spaceflight resources can complete the transition.
+    state::activity::forced::ForcedDestination forcedConfiguration{};
+    state::activity::forced::snapshot(forcedConfiguration);
+    const std::string_view forcedName(forcedConfiguration.packageName.data(),
+                                      forcedConfiguration.packageNameLength);
+    const std::string_view sourceName = copy_name(source);
+    const bool pandoraCarrierProbe =
+        state::activity::forced::active(forcedConfiguration)
+        && (forcedName == "vfx_shade_test" || forcedName == "pandora_freeroam");
+    if (pandoraCarrierProbe && source.activityIndex > 0 && !sourceName.empty()
+        && sourceName != "city_tower_social_d2") {
+        const bool captured = state::activity::carrier::publish(sourceName, source.activityIndex);
+        std::array<char, core::log::kLineCapacity> line{};
+        const int written =
+            std::snprintf(line.data(),
+                          line.size(),
+                          "ev=bap svc=6 stage=native_carrier result=%s name=%.*s activity=%d",
+                          captured ? "captured" : "rejected",
+                          static_cast<int>(sourceName.size()),
+                          sourceName.data(),
+                          static_cast<int>(source.activityIndex));
+        if (written > 0) {
+            core::log::write(core::log::Channel::server,
+                             captured ? core::log::Level::info : core::log::Level::warn,
+                             {line.data(), static_cast<std::size_t>(written)});
+        }
+    }
     const bool forced = state::activity::forced::apply(destination);
     if (forced) {
         const std::int16_t carrierActivity = defaults.defaultDestination.selection.activityIndex;
-        if (destination.activityIndex == 0 && carrierActivity > 0
+        if (forcedConfiguration.carrierIdentityPolicy
+                == state::activity::forced::CarrierIdentityPolicy::bundledFallback
+            && destination.activityIndex == 0 && carrierActivity > 0
             && carrierActivity <= state::activity::destination::kMaximumActivityIndex) {
             const std::int16_t sourceActivity = destination.activityIndex;
             const bool rewritten =
@@ -208,6 +237,13 @@ prepare_allocation(const request_selection::ActivityManagerSelectionResult& pars
                                  rewritten ? core::log::Level::info : core::log::Level::warn,
                                  {line.data(), static_cast<std::size_t>(written)});
             }
+        } else if (forcedConfiguration.carrierIdentityPolicy
+                       == state::activity::forced::CarrierIdentityPolicy::preserveRequest
+                   && destination.activityIndex == 0) {
+            core::log::write(core::log::Channel::server,
+                             core::log::Level::info,
+                             "ev=bap svc=6 stage=carrier_identity result=preserved activity=0 "
+                             "policy=preserve_request");
         }
         report_forced(destination);
     } else if (!source.hasPackageName) {

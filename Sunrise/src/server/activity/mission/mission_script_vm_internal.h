@@ -14,9 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "lauxlib.h"
-#include "lua.h"
-#include "lualib.h"
+#include "lua.hpp"
 #include "mission_script_vm.h"
 
 namespace sunrise::server::activity::mission::lua_vm::detail {

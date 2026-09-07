@@ -1,0 +1,316 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index b20d291..8008807 100755
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -142,6 +142,7 @@ dependencies = [
+  "once_cell",
+  "parking_lot",
+  "paste",
++ "png",
+  "poll-promise",
+  "profiling",
+  "puffin",
+@@ -157,6 +158,7 @@ dependencies = [
+  "serde",
+  "serde_json",
+  "serde_yaml",
++ "sha2",
+  "smallvec",
+  "strum",
+  "thiserror",
+diff --git a/crates/alkahest-renderer/src/ecs/render/static_geometry.rs b/crates/alkahest-renderer/src/ecs/render/static_geometry.rs
+index f0259fe..66b58c5 100644
+--- a/crates/alkahest-renderer/src/ecs/render/static_geometry.rs
++++ b/crates/alkahest-renderer/src/ecs/render/static_geometry.rs
+@@ -298,6 +298,7 @@ pub struct StaticInstances {
+     pub instance_count: usize,
+     pub cbuffer: ConstantBuffer<u8>,
+     cbuffer_dirty: bool,
++    visible_children: Vec<Entity>,
+ }
+ 
+ impl StaticInstances {
+@@ -309,6 +310,7 @@ impl StaticInstances {
+             instance_count: instances,
+             cbuffer,
+             cbuffer_dirty: true,
++            visible_children: Vec::new(),
+         })
+     }
+ 
+@@ -371,6 +373,27 @@ pub fn create_instances_scope(mesh: &SStaticMesh, transforms: &[Transform]) -> S
+ /// Rendered by [`StaticInstances`]
+ pub struct StaticInstance;
+ 
++/// Native record identity, independent of transient ECS handles or loading order.
++#[derive(Clone, Copy, Debug)]
++pub struct StaticInstanceSource {
++    pub table_tag: TagHash,
++    pub resource_offset: u64,
++    pub world_id: u64,
++    pub preheader_tag: TagHash,
++    pub instances_tag: TagHash,
++    pub group_index: u32,
++    pub transform_index: u32,
++    pub mesh_tag: TagHash,
++}
++
++impl StaticInstanceSource {
++    pub fn key(&self) -> String {
++        format!("t{:08X}/r{:X}/w{:016X}/p{:08X}/i{:08X}/g{}/n{}/m{:08X}",
++            self.table_tag.0, self.resource_offset, self.world_id, self.preheader_tag.0,
++            self.instances_tag.0, self.group_index, self.transform_index, self.mesh_tag.0)
++    }
++}
++
+ pub fn draw_static_instances_system(
+     renderer: &Renderer,
+     scene: &Scene,
+@@ -429,6 +452,9 @@ pub fn draw_static_instances_individual_system(
+         .without::<&Hidden>()
+         .iter()
+     {
++        if scene.get::<&Hidden>(parent.0).is_ok() {
++            continue;
++        }
+         if let Ok(model) = scene.get::<&StaticInstances>(parent.0) {
+             unsafe {
+                 cbuffer
+@@ -449,10 +475,14 @@ pub fn draw_static_instances_individual_system(
+ pub fn update_static_instances_system(scene: &Scene) {
+     profiling::scope!("update_static_instances_system");
+     for (_, (instances, children)) in scene.query::<(&mut StaticInstances, &Children)>().iter() {
+-        if instances.cbuffer_dirty {
+-            instances.update_cbuffer(scene, children);
++        let visible: Vec<_> = children.iter().copied().filter(|&child|
++            scene.get::<&Transform>(child).is_ok() && scene.get::<&Hidden>(child).is_err()
++        ).collect();
++        if instances.cbuffer_dirty || instances.visible_children != visible {
++            instances.update_cbuffer(scene, &visible);
+             instances.cbuffer_dirty = false;
+-            instances.instance_count = children.len();
++            instances.instance_count = visible.len();
++            instances.visible_children = visible;
+         }
+     }
+ 
+diff --git a/crates/alkahest-renderer/src/loaders/map.rs b/crates/alkahest-renderer/src/loaders/map.rs
+index 9af66b3..14b7280 100644
+--- a/crates/alkahest-renderer/src/loaders/map.rs
++++ b/crates/alkahest-renderer/src/loaders/map.rs
+@@ -41,7 +41,7 @@ use crate::{
+             dynamic_geometry::DynamicModelComponent,
+             havok::HavokShapeRenderer,
+             light::{LightRenderer, LightShape, ShadowMapRenderer},
+-            static_geometry::{StaticInstance, StaticInstances, StaticModel},
++            static_geometry::{StaticInstance, StaticInstanceSource, StaticInstances, StaticModel},
+             terrain::TerrainPatches,
+         },
+         tags::{insert_tag, EntityTag, NodeFilter},
+@@ -425,7 +425,7 @@ fn load_datatable_into_scene<R: Read + Seek>(
+                 let preheader: SUnk80806ef4 =
+                     package_manager().read_tag_struct(preheader_tag).unwrap();
+ 
+-                for s in &preheader.instances.instance_groups {
++                for (group_index, s) in preheader.instances.instance_groups.iter().enumerate() {
+                     let mesh_tag = preheader.instances.statics[s.static_index as usize];
+                     let model =
+                         StaticModel::load(&mut renderer.data.lock().asset_manager, mesh_tag)
+@@ -437,7 +437,7 @@ fn load_datatable_into_scene<R: Read + Seek>(
+                     let parent = spawn_data_entity(scene, (metadata.clone(),), parent_entity);
+                     let mut instances = vec![];
+ 
+-                    for transform in transforms.iter() {
++                    for (instance_index, transform) in transforms.iter().enumerate() {
+                         let transform = Transform {
+                             translation: transform.translation,
+                             rotation: transform.rotation,
+@@ -447,10 +447,20 @@ fn load_datatable_into_scene<R: Read + Seek>(
+ 
+                         let entity = scene.spawn((
+                             Icon::Unicode(ICON_CUBE_OUTLINE),
+-                            Label::from("Static Instance"),
++                            Label::from(format!("Static {:08X} / {}", mesh_tag.0, s.instance_start as u32 + instance_index as u32)),
+                             OriginalTransform(transform),
+                             transform,
+                             StaticInstance,
++                            StaticInstanceSource {
++                                table_tag: table_hash,
++                                resource_offset: data.data_resource.offset,
++                                world_id: data.world_id,
++                                preheader_tag,
++                                instances_tag: preheader.instances.taghash(),
++                                group_index: group_index as u32,
++                                transform_index: s.instance_start as u32 + instance_index as u32,
++                                mesh_tag,
++                            },
+                             Parent(parent),
+                             NodeFilter::Static,
+                         ));
+diff --git a/crates/alkahest-renderer/src/renderer/gbuffer.rs b/crates/alkahest-renderer/src/renderer/gbuffer.rs
+index 93679a1..27926d1 100644
+--- a/crates/alkahest-renderer/src/renderer/gbuffer.rs
++++ b/crates/alkahest-renderer/src/renderer/gbuffer.rs
+@@ -377,8 +377,7 @@ impl CpuStagingBuffer {
+         f: impl FnOnce(D3D11_MAPPED_SUBRESOURCE) -> R,
+     ) -> anyhow::Result<R> {
+         unsafe {
+-            #[allow(clippy::uninit_assumed_init)]
+-            let mut ptr = std::mem::MaybeUninit::uninit().assume_init();
++            let mut ptr = D3D11_MAPPED_SUBRESOURCE::default();
+             self.gctx
+                 .context()
+                 .Map(&self.texture, 0, mode, 0, Some(&mut ptr))
+diff --git a/crates/alkahest/Cargo.toml b/crates/alkahest/Cargo.toml
+index 510a9b7..8b4675e 100644
+--- a/crates/alkahest/Cargo.toml
++++ b/crates/alkahest/Cargo.toml
+@@ -24,6 +24,8 @@ ron = "0.8.1"
+ serde_json.workspace = true
+ serde_yaml.workspace = true
+ serde.workspace = true
++sha2 = "=0.10.8"
++png.workspace = true
+ tiger-parse.workspace = true
+ zip-extract = "0.1.3"
+ 
+diff --git a/crates/alkahest/src/app.rs b/crates/alkahest/src/app.rs
+index 6440f6c..dbdac9b 100644
+--- a/crates/alkahest/src/app.rs
++++ b/crates/alkahest/src/app.rs
+@@ -62,7 +62,7 @@ impl AlkahestApp {
+         args: ApplicationArgs,
+     ) -> Self {
+         let window = winit::window::WindowBuilder::new()
+-            .with_title("Alkahest")
++            .with_title("Izanami World Studio | Alkahest pre-BL")
+             .with_min_inner_size(PhysicalSize::new(640, 360))
+             .with_inner_size(config::with(|c| {
+                 PhysicalSize::new(c.window.width, c.window.height)
+diff --git a/crates/alkahest/src/config.rs b/crates/alkahest/src/config.rs
+index ed1094a..9795a25 100644
+--- a/crates/alkahest/src/config.rs
++++ b/crates/alkahest/src/config.rs
+@@ -10,7 +10,7 @@ use crate::util::RwLock;
+ lazy_static! {
+     pub static ref CONFIGURATION: RwLock<Config> = RwLock::new(Config::default());
+     pub static ref APP_DIRS: ProjectDirs = {
+-        let pd = ProjectDirs::from("net", "cohaereo", "AlkahestPrebl")
++        let pd = ProjectDirs::from("org", "IzanamiForge", "WorldStudio")
+             .expect("Failed to get application directories");
+         std::fs::create_dir_all(pd.config_dir()).expect("Failed to create config directory");
+         std::fs::create_dir_all(pd.config_local_dir())
+diff --git a/crates/alkahest/src/gui/inspector/mod.rs b/crates/alkahest/src/gui/inspector/mod.rs
+index 89f2266..8f0bbd0 100644
+--- a/crates/alkahest/src/gui/inspector/mod.rs
++++ b/crates/alkahest/src/gui/inspector/mod.rs
+@@ -214,6 +214,22 @@ pub fn show_inspector_panel(
+     });
+     ui.separator();
+ 
++    if let Some(source) = e.get::<&alkahest_renderer::ecs::render::static_geometry::StaticInstanceSource>() {
++        ui.collapsing("Forge Source", |ui| {
++            if let Some(mut label) = e.get::<&mut Label>() {
++                ui.horizontal(|ui| {
++                    ui.label("Name");
++                    ui.text_edit_singleline(&mut label.label);
++                });
++            }
++            ui.monospace(format!("Mesh {:08X}", source.mesh_tag.0));
++            ui.monospace(format!("Table {:08X} / resource 0x{:X}", source.table_tag.0, source.resource_offset));
++            ui.monospace(format!("Instances {:08X} / transform {}", source.instances_tag.0, source.transform_index));
++            ui.label(source.key());
++        });
++        ui.separator();
++    }
++
+     if let Some(tags) = e.get::<&Tags>() {
+         ui.horizontal(|ui| {
+             ui.label(RichText::new("Tags: ").color(Color32::WHITE).strong());
+diff --git a/crates/alkahest/src/gui/menu/mod.rs b/crates/alkahest/src/gui/menu/mod.rs
+index 4a3120a..3723456 100644
+--- a/crates/alkahest/src/gui/menu/mod.rs
++++ b/crates/alkahest/src/gui/menu/mod.rs
+@@ -18,6 +18,7 @@ use crate::{
+ 
+ mod help;
+ mod utility;
++mod forge;
+ 
+ #[derive(Default)]
+ pub struct MenuBar {
+@@ -25,6 +26,9 @@ pub struct MenuBar {
+     changelog_open: bool,
+     about_open: bool,
+     markdown_cache: CommonMarkCache,
++    forge_status: String,
++    forge_sources_open: bool,
++    forge_source_filter: String,
+ }
+ 
+ macro_rules! control_section_title {
+@@ -57,6 +61,9 @@ impl GuiView for MenuBar {
+     ) -> Option<ViewResult> {
+         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+             egui::menu::bar(ui, |ui| {
++                ui.menu_button("Forge Project", |ui| {
++                    self.forge_menu(ui, resources);
++                });
+                 ui.menu_button("Utility", |ui| {
+                     self.utility_menu(ui, resources);
+                 });
+@@ -80,6 +87,7 @@ impl GuiView for MenuBar {
+             });
+         });
+ 
++        self.forge_sources(ctx, resources);
+         self.change_log(ctx);
+         self.about(ctx);
+         self.controls(ctx);
+diff --git a/crates/alkahest/src/main.rs b/crates/alkahest/src/main.rs
+index 33e44c6..e6fd542 100644
+--- a/crates/alkahest/src/main.rs
++++ b/crates/alkahest/src/main.rs
+@@ -31,6 +31,8 @@ mod resources {
+     pub use alkahest_renderer::resources::*;
+ }
+ mod discord;
++mod forge_project;
++mod forge_preview;
+ // mod updater;
+ mod util;
+ 
+@@ -63,6 +65,18 @@ struct ApplicationArgs {
+ 
+     #[arg(long)]
+     fullscreen: bool,
++
++    /// Load a map headlessly and export a source-verified external static project.
++    #[arg(long, requires = "map")]
++    forge_audit: Option<PathBuf>,
++
++    /// Optional mesh tag to isolate in the offscreen verification render.
++    #[arg(long, value_parser = parse_taghash, requires = "forge_audit")]
++    forge_preview_mesh: Option<TagHash>,
++
++    /// Opt in to publishing viewer presence to Discord.
++    #[arg(long)]
++    discord_rpc: bool,
+ }
+ 
+ #[tokio::main]
+@@ -141,7 +155,13 @@ async fn main() -> anyhow::Result<()> {
+     let mut event_loop = EventLoop::new()?;
+     initialize_package_manager(&args, &mut event_loop, &icon)?;
+ 
+-    tokio::spawn(discord::discord_client_loop());
++    if let Some(output) = &args.forge_audit {
++        return forge_project::audit(args.map.unwrap(), args.activity, output, args.forge_preview_mesh).await;
++    }
++
++    if args.discord_rpc {
++        tokio::spawn(discord::discord_client_loop());
++    }
+ 
+     let mut app = AlkahestApp::new(event_loop, &icon, args);
+ 

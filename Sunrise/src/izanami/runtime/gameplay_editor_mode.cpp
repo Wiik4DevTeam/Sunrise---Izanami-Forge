@@ -100,6 +100,24 @@ NativeActivityLaunchResult request_native_activity_launch(bool rebuildCarrier) n
         rebuildCarrier, client::hooks::director::ActivityGoalMode::activityTransition);
 }
 
+NativeActivityLaunchResult
+request_native_activity_launch_with_carrier(std::int16_t carrierActivityIndex) noexcept {
+    const client::hooks::director::ActivityLaunchResult launch =
+        client::hooks::director::request_activity_launch_with_carrier(
+            carrierActivityIndex, client::hooks::director::ActivityGoalMode::activityTransition);
+    bool uiHidden = false;
+    if (launch.requested) {
+        uiHidden = core::ui::runtime::set_visible(false);
+        (void)editor::ui::set_standalone_visible(false);
+        client::hooks::cursor::apply_visibility(false);
+        client::hooks::polled_input::apply_visibility(false);
+    }
+    return {.requested = launch.requested,
+            .targetResolved = launch.targetResolved,
+            .inOrbit = launch.inOrbit,
+            .uiHidden = uiHidden};
+}
+
 NativeActivityLaunchResult request_native_catalog_activity_launch() noexcept {
     return request_native_activity_launch_impl(
         false, client::hooks::director::ActivityGoalMode::activityTransition, true);
